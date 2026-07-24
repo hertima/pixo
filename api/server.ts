@@ -404,11 +404,46 @@ async function askOpenAi(userId: string, message: string): Promise<string> {
     throw new HttpError(openAiResponse.status, messageText);
   }
 
-  if (payload && typeof payload === "object" && "output_text" in payload && typeof payload.output_text === "string") {
-    return payload.output_text;
+  const text = extractResponseText(payload);
+
+  if (text) {
+    return text;
   }
 
   throw new HttpError(502, "A resposta da IA veio sem texto.");
+}
+
+function extractResponseText(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  if ("output_text" in payload && typeof payload.output_text === "string" && payload.output_text.length > 0) {
+    return payload.output_text;
+  }
+
+  if (!("output" in payload) || !Array.isArray(payload.output)) {
+    return null;
+  }
+
+  const text = payload.output
+    .filter((item): item is { type: string; content: unknown[] } => {
+      return Boolean(item) && typeof item === "object" && (item as { type?: unknown }).type === "message";
+    })
+    .flatMap((item) => item.content)
+    .filter((part): part is { type: string; text: string } => {
+      return (
+        Boolean(part) &&
+        typeof part === "object" &&
+        (part as { type?: unknown }).type === "output_text" &&
+        typeof (part as { text?: unknown }).text === "string"
+      );
+    })
+    .map((part) => part.text)
+    .join("")
+    .trim();
+
+  return text.length > 0 ? text : null;
 }
 
 function createSession(user: UserRow): { token: string; user: { id: string; email: string } } {
