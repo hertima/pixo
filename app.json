@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "PIXO",
+    "slug": "pixo",
+    "scheme": "pixo",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "platforms": ["ios", "android", "web"],
+    "plugins": ["expo-router"],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "app.pixo.mobile"
+    },
+    "android": {
+      "package": "app.pixo.mobile",
+      "edgeToEdgeEnabled": true
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./imagem/imagem/pixo 01.png"
+    }
+  }
+}

@@ -1,0 +1,560 @@
+import "dotenv/config";
+
+import bcrypt from "bcryptjs";
+import cors from "cors";
+import express, { type NextFunction, type Request, type Response } from "express";
+import fs from "node:fs/promises";
+import path from "node:path";
+import jwt, { type JwtPayload } from "jsonwebtoken";
+import pg from "pg";
+
+const { Pool } = pg;
+
+const app = express();
+const port = Number(process.env.PORT ?? process.env.APP_PORT ?? 3000);
+const pool = new Pool({
+  host: process.env.PGHOST ?? "localhost",
+  port: Number(process.env.PGPORT ?? 5432),
+  database: process.env.PGDATABASE ?? process.env.POSTGRES_DB ?? "pixo",
+  user: process.env.PGUSER ?? process.env.POSTGRES_USER ?? "pixo",
+  password: process.env.PGPASSWORD ?? process.env.POSTGRES_PASSWORD ?? "troque_essa_senha_forte"
+});
+
+type UserRow = {
+  id: string;
+  email: string;
+  password_hash: string;
+};
+
+type ProfileRow = {
+  display_name: string | null;
+  preferred_channel: string | null;
+  free_time_minutes: number | null;
+  city_authorized: boolean;
+  skills: string[];
+};
+
+type GoalRow = {
+  id: string;
+  name: string;
+  target_amount: string;
+  current_amount: string;
+  due_date: string | null;
+};
+
+type MissionRow = {
+  id: string;
+  title: string;
+  description: string;
+  estimated_value: string;
+  status: "pending" | "active" | "completed";
+};
+
+type MentorMessageRow = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  created_at: string;
+};
+
+type OnboardingDraft = {
+  monthlyGoal: number;
+  channel: "whatsapp" | "instagram" | "email";
+  createdAt: string;
+};
+
+type AuthedRequest = Request & {
+  userId: string;
+};
+
+class HttpError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "HttpError";
+    this.status = status;
+  }
+}
+
+app.use(cors({ origin: true, credentials: true }));
+app.use(express.json({ limit: "1mb" }));
+
+app.get("/api/health", async (_request, response, next) => {
+  try {
+    await pool.query("SELECT 1");
+    response.json({ ok: true, db: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/auth/signup", async (request, response, next) => {
+  try {
+    const body = readBody(request);
+    const email = readEmail(body.email);
+    const password = readPassword(body.password);
+    const draft = isOnboardingDraft(body.draft) ? body.draft : null;
+    const passwordHash = await bcrypt.hash(password, 12);
+
+    const result = await pool.query<UserRow>(
+      "INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id, email, password_hash",
+      [email, passwordHash]
+    );
+    const user = firstRow(result.rows);
+
+    if (draft) {
+      await migrateDraft(user.id, draft);
+    }
+
+    response.status(201).json(createSession(user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/auth/login", async (request, response, next) => {
+  try {
+    const body = readBody(request);
+    const email = readEmail(body.email);
+    const password = readPassword(body.password);
+    const result = await pool.query<UserRow>(
+      "SELECT id, email, password_hash FROM users WHERE lower(email) = lower($1) LIMIT 1",
+      [email]
+    );
+    const user = result.rows[0];
+
+    if (!user) {
+      throw new HttpError(401, "Conta não encontrada.");
+    }
+
+    const passwordMatches = await bcrypt.compare(password, user.password_hash);
+
+    if (!passwordMatches) {
+      throw new HttpError(401, "Senha inválida.");
+    }
+
+    response.json(createSession(user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/auth/me", requireAuth, async (request, response, next) => {
+  try {
+    const user = await getUser((request as AuthedRequest).userId);
+    response.json({ user: publicUser(user) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/onboarding/migrate", requireAuth, async (request, response, next) => {
+  try {
+    const body = readBody(request);
+
+    if (!isOnboardingDraft(body.draft)) {
+      throw new HttpError(400, "Onboarding inválido.");
+    }
+
+    await migrateDraft((request as AuthedRequest).userId, body.draft);
+    response.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/bootstrap", requireAuth, async (request, response, next) => {
+  try {
+    const userId = (request as AuthedRequest).userId;
+    const user = await getUser(userId);
+    const profile = await getProfile(userId);
+    const goal = await getActiveGoal(userId);
+    const mission = await getTodaysMission(userId);
+    const opportunities = await pool.query<{ count: string }>(
+      "SELECT COUNT(*)::TEXT AS count FROM opportunities WHERE user_id = $1 AND status = 'new'",
+      [userId]
+    );
+
+    response.json({
+      user: publicUser(user),
+      profile: profile
+        ? {
+            displayName: profile.display_name,
+            preferredChannel: profile.preferred_channel,
+            freeTimeMinutes: profile.free_time_minutes,
+            cityAuthorized: profile.city_authorized,
+            skills: profile.skills
+          }
+        : null,
+      activeGoal: goal
+        ? {
+            id: goal.id,
+            name: goal.name,
+            targetAmount: Number(goal.target_amount),
+            currentAmount: Number(goal.current_amount),
+            dueDate: goal.due_date
+          }
+        : null,
+      todaysMission: mission
+        ? {
+            id: mission.id,
+            title: mission.title,
+            description: mission.description,
+            estimatedValue: Number(mission.estimated_value),
+            status: mission.status
+          }
+        : null,
+      progress: {
+        earnedAmount: goal ? Number(goal.current_amount) : 0,
+        targetAmount: goal ? Number(goal.target_amount) : 0
+      },
+      opportunitiesCount: Number(opportunities.rows[0]?.count ?? 0)
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/mentor/messages", requireAuth, async (request, response, next) => {
+  try {
+    const messages = await getMentorMessages((request as AuthedRequest).userId);
+    response.json({ messages: serializeMessages(messages) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/mentor/message", requireAuth, async (request, response, next) => {
+  try {
+    const body = readBody(request);
+    const content = readNonEmptyString(body.content, "Mensagem");
+    const userId = (request as AuthedRequest).userId;
+
+    if (!process.env.OPENAI_API_KEY) {
+      throw new HttpError(503, "OPENAI_API_KEY não configurada na API local.");
+    }
+
+    await pool.query("INSERT INTO mentor_messages (user_id, role, content) VALUES ($1, 'user', $2)", [userId, content]);
+
+    const assistantContent = await askOpenAi(userId, content);
+    await pool.query("INSERT INTO mentor_messages (user_id, role, content) VALUES ($1, 'assistant', $2)", [
+      userId,
+      assistantContent
+    ]);
+
+    const messages = await getMentorMessages(userId);
+    response.json({ messages: serializeMessages(messages) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.use(express.static(path.resolve(process.cwd(), "dist")));
+app.get("*", async (request, response, next) => {
+  if (request.path.startsWith("/api/")) {
+    next();
+    return;
+  }
+
+  const indexPath = path.resolve(process.cwd(), "dist", "index.html");
+  try {
+    await fs.access(indexPath);
+    response.sendFile(indexPath);
+  } catch {
+    response.status(404).json({ message: "Web build não encontrado. Rode npm run build:web." });
+  }
+});
+
+app.use((error: unknown, _request: Request, response: Response, _next: NextFunction) => {
+  if (error instanceof HttpError) {
+    response.status(error.status).json({ message: error.message });
+    return;
+  }
+
+  if (isPgUniqueError(error)) {
+    response.status(409).json({ message: "Este email já está cadastrado." });
+    return;
+  }
+
+  response.status(500).json({ message: error instanceof Error ? error.message : "Erro interno da API." });
+});
+
+ensureSchema()
+  .then(() => {
+    app.listen(port, () => {
+      process.stdout.write(`PIXO API ouvindo em http://localhost:${port}\n`);
+    });
+  })
+  .catch((error: unknown) => {
+    process.stderr.write(`${error instanceof Error ? error.message : "Falha ao iniciar API"}\n`);
+    process.exit(1);
+  });
+
+async function ensureSchema(): Promise<void> {
+  const schema = await fs.readFile(path.resolve(process.cwd(), "db", "schema.sql"), "utf8");
+  await pool.query(schema);
+}
+
+async function getUser(userId: string): Promise<UserRow> {
+  const result = await pool.query<UserRow>("SELECT id, email, password_hash FROM users WHERE id = $1 LIMIT 1", [userId]);
+  return firstRow(result.rows);
+}
+
+async function getProfile(userId: string): Promise<ProfileRow | null> {
+  const result = await pool.query<ProfileRow>(
+    "SELECT display_name, preferred_channel, free_time_minutes, city_authorized, skills FROM ai_profiles WHERE user_id = $1",
+    [userId]
+  );
+  return result.rows[0] ?? null;
+}
+
+async function getActiveGoal(userId: string): Promise<GoalRow | null> {
+  const result = await pool.query<GoalRow>(
+    "SELECT id, name, target_amount, current_amount, due_date FROM goals WHERE user_id = $1 AND status = 'active' ORDER BY created_at DESC LIMIT 1",
+    [userId]
+  );
+  return result.rows[0] ?? null;
+}
+
+async function getTodaysMission(userId: string): Promise<MissionRow | null> {
+  const result = await pool.query<MissionRow>(
+    "SELECT id, title, description, estimated_value, status FROM missions WHERE user_id = $1 AND status IN ('pending', 'active') ORDER BY created_at DESC LIMIT 1",
+    [userId]
+  );
+  return result.rows[0] ?? null;
+}
+
+async function getMentorMessages(userId: string): Promise<MentorMessageRow[]> {
+  const result = await pool.query<MentorMessageRow>(
+    "SELECT id, role, content, created_at FROM mentor_messages WHERE user_id = $1 ORDER BY created_at ASC LIMIT 40",
+    [userId]
+  );
+  return result.rows;
+}
+
+async function migrateDraft(userId: string, draft: OnboardingDraft): Promise<void> {
+  const mission = buildInitialMission(draft);
+
+  await pool.query(
+    `INSERT INTO ai_profiles (user_id, preferred_channel, memory)
+     VALUES ($1, $2, $3::JSONB)
+     ON CONFLICT (user_id)
+     DO UPDATE SET preferred_channel = EXCLUDED.preferred_channel, memory = ai_profiles.memory || EXCLUDED.memory, updated_at = now()`,
+    [
+      userId,
+      draft.channel,
+      JSON.stringify({
+        monthlyGoal: draft.monthlyGoal,
+        onboardingCreatedAt: draft.createdAt
+      })
+    ]
+  );
+
+  const activeGoal = await getActiveGoal(userId);
+
+  if (!activeGoal) {
+    await pool.query("INSERT INTO goals (user_id, name, target_amount) VALUES ($1, $2, $3)", [
+      userId,
+      "Meta mensal",
+      draft.monthlyGoal
+    ]);
+  }
+
+  const activeMission = await getTodaysMission(userId);
+
+  if (!activeMission) {
+    await pool.query(
+      "INSERT INTO missions (user_id, title, description, estimated_value, status, source) VALUES ($1, $2, $3, $4, 'active', 'onboarding')",
+      [userId, mission.title, mission.description, mission.estimatedValue]
+    );
+  }
+}
+
+async function askOpenAi(userId: string, message: string): Promise<string> {
+  const profile = await getProfile(userId);
+  const goal = await getActiveGoal(userId);
+  const mission = await getTodaysMission(userId);
+  const model = process.env.OPENAI_MODEL ?? "gpt-5-mini";
+  const instructions = [
+    "Você é o PIXO IA, um copiloto financeiro e mentor de renda extra.",
+    "Use a memória do usuário para sugerir ações práticas, curtas e verificáveis.",
+    "Não prometa ganhos garantidos. Transforme objetivos em missões realistas.",
+    `Perfil: canal=${profile?.preferred_channel ?? "não informado"}, habilidades=${profile?.skills.join(", ") ?? ""}.`,
+    `Meta ativa: ${goal ? `R$ ${goal.current_amount} de R$ ${goal.target_amount}` : "nenhuma"}.`,
+    `Missão ativa: ${mission ? mission.title : "nenhuma"}.`
+  ].join("\n");
+
+  const openAiResponse = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model,
+      instructions,
+      input: message
+    })
+  });
+  const payload: unknown = await openAiResponse.json();
+
+  if (!openAiResponse.ok) {
+    const messageText = readOpenAiError(payload);
+    throw new HttpError(openAiResponse.status, messageText);
+  }
+
+  if (payload && typeof payload === "object" && "output_text" in payload && typeof payload.output_text === "string") {
+    return payload.output_text;
+  }
+
+  throw new HttpError(502, "A resposta da IA veio sem texto.");
+}
+
+function createSession(user: UserRow): { token: string; user: { id: string; email: string } } {
+  return {
+    token: jwt.sign({ sub: user.id }, getJwtSecret(), { expiresIn: "30d" }),
+    user: publicUser(user)
+  };
+}
+
+function publicUser(user: UserRow): { id: string; email: string } {
+  return { id: user.id, email: user.email };
+}
+
+function requireAuth(request: Request, _response: Response, next: NextFunction): void {
+  try {
+    const header = request.header("authorization");
+
+    if (!header?.startsWith("Bearer ")) {
+      throw new HttpError(401, "Token ausente.");
+    }
+
+    const token = header.slice("Bearer ".length);
+    const payload = jwt.verify(token, getJwtSecret());
+
+    if (!isJwtPayload(payload) || typeof payload.sub !== "string") {
+      throw new HttpError(401, "Token inválido.");
+    }
+
+    (request as AuthedRequest).userId = payload.sub;
+    next();
+  } catch (error) {
+    next(error instanceof HttpError ? error : new HttpError(401, "Token inválido."));
+  }
+}
+
+function getJwtSecret(): string {
+  return process.env.JWT_SECRET ?? "dev_pixo_secret_troque_na_vps";
+}
+
+function buildInitialMission(draft: OnboardingDraft): { title: string; description: string; estimatedValue: number } {
+  const channelLabel = {
+    whatsapp: "WhatsApp",
+    instagram: "Instagram",
+    email: "email"
+  }[draft.channel];
+  const estimatedValue = Math.max(20, Math.min(80, Math.round(draft.monthlyGoal * 0.16)));
+
+  return {
+    title: `Conseguir o primeiro cliente pelo ${channelLabel}`,
+    description: "Fale com contatos reais oferecendo um serviço simples que você consiga entregar hoje.",
+    estimatedValue
+  };
+}
+
+function serializeMessages(messages: MentorMessageRow[]): {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  createdAt: string;
+}[] {
+  return messages.map((message) => ({
+    id: message.id,
+    role: message.role,
+    content: message.content,
+    createdAt: message.created_at
+  }));
+}
+
+function readBody(request: Request): Record<string, unknown> {
+  if (!request.body || typeof request.body !== "object") {
+    throw new HttpError(400, "Corpo da requisição inválido.");
+  }
+
+  return request.body as Record<string, unknown>;
+}
+
+function readEmail(value: unknown): string {
+  const email = readNonEmptyString(value, "Email").toLowerCase();
+
+  if (!email.includes("@")) {
+    throw new HttpError(400, "Email inválido.");
+  }
+
+  return email;
+}
+
+function readPassword(value: unknown): string {
+  const password = readNonEmptyString(value, "Senha");
+
+  if (password.length < 8) {
+    throw new HttpError(400, "A senha precisa ter pelo menos 8 caracteres.");
+  }
+
+  return password;
+}
+
+function readNonEmptyString(value: unknown, label: string): string {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new HttpError(400, `${label} obrigatório.`);
+  }
+
+  return value.trim();
+}
+
+function readOpenAiError(payload: unknown): string {
+  if (!payload || typeof payload !== "object" || !("error" in payload)) {
+    return "A IA não respondeu como esperado.";
+  }
+
+  const error = payload.error as Record<string, unknown>;
+  return typeof error.message === "string" ? error.message : "A IA não respondeu como esperado.";
+}
+
+function firstRow<T>(rows: T[]): T {
+  const row = rows[0];
+
+  if (!row) {
+    throw new HttpError(404, "Registro não encontrado.");
+  }
+
+  return row;
+}
+
+function isOnboardingDraft(value: unknown): value is OnboardingDraft {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const draft = value as Record<string, unknown>;
+
+  return (
+    typeof draft.monthlyGoal === "number" &&
+    draft.monthlyGoal > 0 &&
+    isChannel(draft.channel) &&
+    typeof draft.createdAt === "string"
+  );
+}
+
+function isChannel(value: unknown): value is OnboardingDraft["channel"] {
+  return value === "whatsapp" || value === "instagram" || value === "email";
+}
+
+function isJwtPayload(value: string | JwtPayload): value is JwtPayload {
+  return typeof value === "object" && value !== null;
+}
+
+function isPgUniqueError(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && "code" in error && error.code === "23505");
+}

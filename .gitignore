@@ -1,0 +1,10 @@
+
+node_modules/
+.expo/
+dist/
+.env
+.expo-start.log
+.expo-start.err
+.expo-web.log
+.expo-web.err
+.tmp/
