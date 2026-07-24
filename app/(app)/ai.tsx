@@ -8,6 +8,8 @@ import { MascotImage } from "../../components/MascotImage";
 import { apiRequest, type MentorMessage } from "../../lib/api";
 import { colors, radii, shadows, spacing, typography } from "../../theme/tokens";
 
+const QUICK_REPLIES = ["Não sei o que vender", "Tenho 2 horas por dia", "Sou tímido", "Tenho um notebook"];
+
 export default function AiScreen() {
   const [messages, setMessages] = useState<MentorMessage[]>([]);
   const [text, setText] = useState("");
@@ -37,8 +39,8 @@ export default function AiScreen() {
     };
   }, []);
 
-  async function sendMessage() {
-    const content = text.trim();
+  async function sendMessage(override?: string) {
+    const content = (override ?? text).trim();
 
     if (!content || sending) {
       return;
@@ -75,11 +77,20 @@ export default function AiScreen() {
           {loading ? (
             <ActivityIndicator color={colors.primary} />
           ) : messages.length === 0 ? (
-            <EmptyState
-              icon={Bot}
-              title="Conversa vazia"
-              body="Envie uma mensagem para a API local acionar a IA com sua memória financeira."
-            />
+            <>
+              <EmptyState
+                icon={Bot}
+                title="Conversa vazia"
+                body="Envie uma mensagem para a API local acionar a IA com sua memória financeira."
+              />
+              <View style={styles.quickReplies}>
+                {QUICK_REPLIES.map((reply) => (
+                  <Pressable key={reply} style={styles.quickReply} onPress={() => sendMessage(reply)} disabled={sending}>
+                    <Text style={styles.quickReplyLabel}>{reply}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </>
           ) : (
             messages.map((message) => (
               <View
@@ -104,7 +115,7 @@ export default function AiScreen() {
             style={styles.input}
             value={text}
           />
-          <Pressable accessibilityRole="button" onPress={sendMessage} style={styles.sendButton}>
+          <Pressable accessibilityRole="button" onPress={() => sendMessage()} style={styles.sendButton}>
             {sending ? <ActivityIndicator color={colors.text} /> : <Send color={colors.text} size={20} />}
           </Pressable>
         </View>
@@ -186,5 +197,23 @@ const styles = StyleSheet.create({
   error: {
     color: colors.danger,
     fontSize: typography.small
+  },
+  quickReplies: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.xs
+  },
+  quickReply: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.borderStrong,
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    backgroundColor: colors.surface
+  },
+  quickReplyLabel: {
+    color: colors.primary,
+    fontSize: typography.small,
+    fontWeight: "700"
   }
 });

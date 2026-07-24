@@ -36,6 +36,9 @@ export type ApiMission = {
   description: string;
   estimatedValue: number;
   status: "pending" | "active" | "completed";
+  targetCount: number;
+  currentCount: number;
+  xpReward: number;
 };
 
 export type ApiProgress = {
@@ -50,13 +53,78 @@ export type MentorMessage = {
   createdAt: string;
 };
 
+export type Gamification = {
+  xp: number;
+  level: string;
+  levelIndex: number;
+  currentLevelXp: number;
+  nextLevelXp: number | null;
+  levels: string[];
+};
+
 export type BootstrapResponse = {
   user: ApiUser;
   profile: ApiProfile | null;
+  gamification: Gamification;
   activeGoal: ApiGoal | null;
   todaysMission: ApiMission | null;
   progress: ApiProgress;
   opportunitiesCount: number;
+};
+
+export type MissionDetail = {
+  id: string;
+  title: string;
+  description: string;
+  estimatedValue: number;
+  status: "pending" | "active" | "completed";
+  targetCount: number;
+  currentCount: number;
+  xpReward: number;
+};
+
+export type MissionStep = {
+  id: string;
+  label: string;
+  done: boolean;
+  sortOrder: number;
+};
+
+export type MissionTodayResponse = {
+  mission: MissionDetail | null;
+  steps: MissionStep[];
+};
+
+export type ProgressRange = "day" | "week" | "month";
+
+export type ProgressEvent = {
+  id: string;
+  amount: number;
+  description: string;
+  kind: string;
+  xpReward: number;
+  createdAt: string;
+};
+
+export type ProgressSummaryResponse = {
+  range: ProgressRange;
+  earnedAmount: number;
+  xpEarned: number;
+  missionsCompleted: number;
+  targetAmount: number;
+  history: ProgressEvent[];
+};
+
+export type Achievement = {
+  key: string;
+  title: string;
+  description: string;
+  unlocked: boolean;
+  unlockedAt: string | null;
+};
+
+export type AchievementsResponse = {
+  achievements: Achievement[];
 };
 
 type ApiRequestOptions = {

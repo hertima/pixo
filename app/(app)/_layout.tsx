@@ -71,6 +71,10 @@ export default function AppLayout() {
           tabBarIcon: ({ color }: TabIconProps) => <User color={iconColor(color)} size={iconSizes.md} />
         }}
       />
+      <Tabs.Screen name="evolution" options={{ href: null }} />
+      <Tabs.Screen name="achievements" options={{ href: null }} />
+      <Tabs.Screen name="radar" options={{ href: null }} />
+      <Tabs.Screen name="simulator" options={{ href: null }} />
     </Tabs>
   );
 }

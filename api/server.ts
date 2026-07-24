@@ -8,6 +8,8 @@ import path from "node:path";
 import jwt, { type JwtPayload } from "jsonwebtoken";
 import pg from "pg";
 
+import { ACHIEVEMENTS, LEVELS, getLevelProgress, unlockedAchievementKeys, type AchievementStats } from "./gamification";
+
 const { Pool } = pg;
 
 const app = express();
@@ -32,6 +34,7 @@ type ProfileRow = {
   free_time_minutes: number | null;
   city_authorized: boolean;
   skills: string[];
+  xp: number;
 };
 
 type GoalRow = {
@@ -48,6 +51,26 @@ type MissionRow = {
   description: string;
   estimated_value: string;
   status: "pending" | "active" | "completed";
+  target_count: number;
+  current_count: number;
+  xp_reward: number;
+};
+
+type MissionStepRow = {
+  id: string;
+  mission_id: string;
+  label: string;
+  done: boolean;
+  sort_order: number;
+};
+
+type ProgressEventRow = {
+  id: string;
+  amount: string;
+  description: string;
+  kind: string;
+  xp_reward: number;
+  created_at: string;
 };
 
 type MentorMessageRow = {
@@ -175,6 +198,7 @@ app.get("/api/bootstrap", requireAuth, async (request, response, next) => {
       "SELECT COUNT(*)::TEXT AS count FROM opportunities WHERE user_id = $1 AND status = 'new'",
       [userId]
     );
+    const levelProgress = getLevelProgress(profile?.xp ?? 0);
 
     response.json({
       user: publicUser(user),
@@ -187,6 +211,14 @@ app.get("/api/bootstrap", requireAuth, async (request, response, next) => {
             skills: profile.skills
           }
         : null,
+      gamification: {
+        xp: levelProgress.xp,
+        level: levelProgress.name,
+        levelIndex: levelProgress.index,
+        currentLevelXp: levelProgress.currentLevelXp,
+        nextLevelXp: levelProgress.nextLevelXp,
+        levels: LEVELS.map((level) => level.name)
+      },
       activeGoal: goal
         ? {
             id: goal.id,
@@ -196,15 +228,7 @@ app.get("/api/bootstrap", requireAuth, async (request, response, next) => {
             dueDate: goal.due_date
           }
         : null,
-      todaysMission: mission
-        ? {
-            id: mission.id,
-            title: mission.title,
-            description: mission.description,
-            estimatedValue: Number(mission.estimated_value),
-            status: mission.status
-          }
-        : null,
+      todaysMission: mission ? serializeMission(mission) : null,
       progress: {
         earnedAmount: goal ? Number(goal.current_amount) : 0,
         targetAmount: goal ? Number(goal.target_amount) : 0
@@ -245,6 +269,131 @@ app.post("/api/mentor/message", requireAuth, async (request, response, next) => 
 
     const messages = await getMentorMessages(userId);
     response.json({ messages: serializeMessages(messages) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/missions/today", requireAuth, async (request, response, next) => {
+  try {
+    const userId = (request as AuthedRequest).userId;
+    const mission = await getTodaysMission(userId);
+
+    if (!mission) {
+      response.json({ mission: null, steps: [] });
+      return;
+    }
+
+    const steps = await getMissionSteps(mission.id);
+    response.json({ mission: serializeMission(mission), steps: serializeSteps(steps) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/missions/:id/steps/:stepId/toggle", requireAuth, async (request, response, next) => {
+  try {
+    const userId = (request as AuthedRequest).userId;
+    const mission = await getOwnedMission(userId, readParam(request.params.id, "Missão"));
+    await pool.query("UPDATE mission_steps SET done = NOT done WHERE id = $1 AND mission_id = $2", [
+      readParam(request.params.stepId, "Passo"),
+      mission.id
+    ]);
+    const doneCount = await pool.query<{ count: string }>(
+      "SELECT COUNT(*)::TEXT AS count FROM mission_steps WHERE mission_id = $1 AND done = true",
+      [mission.id]
+    );
+    await pool.query("UPDATE missions SET current_count = $2 WHERE id = $1", [
+      mission.id,
+      Number(doneCount.rows[0]?.count ?? 0)
+    ]);
+    const updatedMission = await getOwnedMission(userId, mission.id);
+    const steps = await getMissionSteps(mission.id);
+    response.json({ mission: serializeMission(updatedMission), steps: serializeSteps(steps) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/missions/:id/complete", requireAuth, async (request, response, next) => {
+  try {
+    const userId = (request as AuthedRequest).userId;
+    const mission = await getOwnedMission(userId, readParam(request.params.id, "Missão"));
+
+    if (mission.status === "completed") {
+      throw new HttpError(400, "Missão já concluída.");
+    }
+
+    await pool.query("UPDATE missions SET status = 'completed' WHERE id = $1", [mission.id]);
+    await pool.query(
+      `INSERT INTO ai_profiles (user_id, xp) VALUES ($1, $2)
+       ON CONFLICT (user_id) DO UPDATE SET xp = ai_profiles.xp + EXCLUDED.xp, updated_at = now()`,
+      [userId, mission.xp_reward]
+    );
+    await pool.query(
+      "INSERT INTO progress_events (user_id, amount, description, kind, xp_reward) VALUES ($1, $2, $3, 'mission_completed', $4)",
+      [userId, mission.estimated_value, `Missão concluída: ${mission.title}`, mission.xp_reward]
+    );
+    await syncAchievements(userId);
+
+    response.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/progress/summary", requireAuth, async (request, response, next) => {
+  try {
+    const userId = (request as AuthedRequest).userId;
+    const range = readRange(request.query.range);
+    const goal = await getActiveGoal(userId);
+    const summary = await pool.query<{ earned: string; xp: string; missions: string }>(
+      `SELECT
+         COALESCE(SUM(amount), 0)::TEXT AS earned,
+         COALESCE(SUM(xp_reward), 0)::TEXT AS xp,
+         COUNT(*) FILTER (WHERE kind = 'mission_completed')::TEXT AS missions
+       FROM progress_events
+       WHERE user_id = $1 AND created_at >= date_trunc($2, now())`,
+      [userId, range]
+    );
+    const row = firstRow(summary.rows);
+    const history = await pool.query<ProgressEventRow>(
+      "SELECT id, amount, description, kind, xp_reward, created_at FROM progress_events WHERE user_id = $1 ORDER BY created_at DESC LIMIT 15",
+      [userId]
+    );
+
+    response.json({
+      range,
+      earnedAmount: Number(row.earned),
+      xpEarned: Number(row.xp),
+      missionsCompleted: Number(row.missions),
+      targetAmount: goal ? Number(goal.target_amount) : 0,
+      history: history.rows.map(serializeProgressEvent)
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/achievements", requireAuth, async (request, response, next) => {
+  try {
+    const userId = (request as AuthedRequest).userId;
+    await syncAchievements(userId);
+    const unlocked = await pool.query<{ achievement_key: string; unlocked_at: string }>(
+      "SELECT achievement_key, unlocked_at FROM user_achievements WHERE user_id = $1",
+      [userId]
+    );
+    const unlockedMap = new Map(unlocked.rows.map((row) => [row.achievement_key, row.unlocked_at]));
+
+    response.json({
+      achievements: ACHIEVEMENTS.map((achievement) => ({
+        key: achievement.key,
+        title: achievement.title,
+        description: achievement.description,
+        unlocked: unlockedMap.has(achievement.key),
+        unlockedAt: unlockedMap.get(achievement.key) ?? null
+      }))
+    });
   } catch (error) {
     next(error);
   }
@@ -303,7 +452,7 @@ async function getUser(userId: string): Promise<UserRow> {
 
 async function getProfile(userId: string): Promise<ProfileRow | null> {
   const result = await pool.query<ProfileRow>(
-    "SELECT display_name, preferred_channel, free_time_minutes, city_authorized, skills FROM ai_profiles WHERE user_id = $1",
+    "SELECT display_name, preferred_channel, free_time_minutes, city_authorized, skills, xp FROM ai_profiles WHERE user_id = $1",
     [userId]
   );
   return result.rows[0] ?? null;
@@ -319,10 +468,106 @@ async function getActiveGoal(userId: string): Promise<GoalRow | null> {
 
 async function getTodaysMission(userId: string): Promise<MissionRow | null> {
   const result = await pool.query<MissionRow>(
-    "SELECT id, title, description, estimated_value, status FROM missions WHERE user_id = $1 AND status IN ('pending', 'active') ORDER BY created_at DESC LIMIT 1",
+    "SELECT id, title, description, estimated_value, status, target_count, current_count, xp_reward FROM missions WHERE user_id = $1 AND status IN ('pending', 'active') ORDER BY created_at DESC LIMIT 1",
     [userId]
   );
   return result.rows[0] ?? null;
+}
+
+async function getOwnedMission(userId: string, missionId: string): Promise<MissionRow> {
+  const result = await pool.query<MissionRow>(
+    "SELECT id, title, description, estimated_value, status, target_count, current_count, xp_reward FROM missions WHERE id = $1 AND user_id = $2 LIMIT 1",
+    [missionId, userId]
+  );
+  return firstRow(result.rows);
+}
+
+async function getMissionSteps(missionId: string): Promise<MissionStepRow[]> {
+  const result = await pool.query<MissionStepRow>(
+    "SELECT id, mission_id, label, done, sort_order FROM mission_steps WHERE mission_id = $1 ORDER BY sort_order ASC",
+    [missionId]
+  );
+  return result.rows;
+}
+
+async function syncAchievements(userId: string): Promise<void> {
+  const stats = await pool.query<{ missions: string; earned: string }>(
+    `SELECT
+       COUNT(*) FILTER (WHERE kind = 'mission_completed')::TEXT AS missions,
+       COALESCE(SUM(amount) FILTER (WHERE amount > 0), 0)::TEXT AS earned
+     FROM progress_events WHERE user_id = $1`,
+    [userId]
+  );
+  const row = firstRow(stats.rows);
+  const achievementStats: AchievementStats = {
+    missionsCompleted: Number(row.missions),
+    totalEarned: Number(row.earned),
+    referrals: 0
+  };
+
+  for (const key of unlockedAchievementKeys(achievementStats)) {
+    await pool.query(
+      "INSERT INTO user_achievements (user_id, achievement_key) VALUES ($1, $2) ON CONFLICT (user_id, achievement_key) DO NOTHING",
+      [userId, key]
+    );
+  }
+}
+
+function readRange(value: unknown): "day" | "week" | "month" {
+  if (value === "day" || value === "week" || value === "month") {
+    return value;
+  }
+
+  return "month";
+}
+
+function serializeMission(mission: MissionRow): {
+  id: string;
+  title: string;
+  description: string;
+  estimatedValue: number;
+  status: MissionRow["status"];
+  targetCount: number;
+  currentCount: number;
+  xpReward: number;
+} {
+  return {
+    id: mission.id,
+    title: mission.title,
+    description: mission.description,
+    estimatedValue: Number(mission.estimated_value),
+    status: mission.status,
+    targetCount: mission.target_count,
+    currentCount: mission.current_count,
+    xpReward: mission.xp_reward
+  };
+}
+
+function serializeSteps(steps: MissionStepRow[]): { id: string; label: string; done: boolean; sortOrder: number }[] {
+  return steps.map((step) => ({
+    id: step.id,
+    label: step.label,
+    done: step.done,
+    sortOrder: step.sort_order
+  }));
+}
+
+function serializeProgressEvent(event: ProgressEventRow): {
+  id: string;
+  amount: number;
+  description: string;
+  kind: string;
+  xpReward: number;
+  createdAt: string;
+} {
+  return {
+    id: event.id,
+    amount: Number(event.amount),
+    description: event.description,
+    kind: event.kind,
+    xpReward: event.xp_reward,
+    createdAt: event.created_at
+  };
 }
 
 async function getMentorMessages(userId: string): Promise<MentorMessageRow[]> {
@@ -364,10 +609,21 @@ async function migrateDraft(userId: string, draft: OnboardingDraft): Promise<voi
   const activeMission = await getTodaysMission(userId);
 
   if (!activeMission) {
-    await pool.query(
-      "INSERT INTO missions (user_id, title, description, estimated_value, status, source) VALUES ($1, $2, $3, $4, 'active', 'onboarding')",
-      [userId, mission.title, mission.description, mission.estimatedValue]
+    const inserted = await pool.query<{ id: string }>(
+      `INSERT INTO missions (user_id, title, description, estimated_value, status, source, target_count, xp_reward)
+       VALUES ($1, $2, $3, $4, 'active', 'onboarding', $5, $6) RETURNING id`,
+      [userId, mission.title, mission.description, mission.estimatedValue, 3, 30]
     );
+    const missionId = firstRow(inserted.rows).id;
+    const steps = ["Preparar uma oferta simples", "Enviar para 5 contatos", "Fechar o primeiro cliente"];
+
+    for (let index = 0; index < steps.length; index += 1) {
+      await pool.query("INSERT INTO mission_steps (mission_id, label, sort_order) VALUES ($1, $2, $3)", [
+        missionId,
+        steps[index],
+        index
+      ]);
+    }
   }
 }
 
@@ -538,6 +794,14 @@ function readPassword(value: unknown): string {
   }
 
   return password;
+}
+
+function readParam(value: string | string[] | undefined, label: string): string {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new HttpError(400, `${label} obrigatório.`);
+  }
+
+  return value;
 }
 
 function readNonEmptyString(value: unknown, label: string): string {
