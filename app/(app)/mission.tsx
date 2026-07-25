@@ -43,6 +43,25 @@ export default function MissionScreen() {
   const mission = data?.mission ?? null;
   const steps = data?.steps ?? [];
 
+  if (!mission && todayPlanStep) {
+    return (
+      <AppScreen>
+        <ScreenSection>
+          <Text style={styles.kicker}>Missão do Dia</Text>
+          <Text style={styles.title}>{todayPlanStep.title}</Text>
+        </ScreenSection>
+        <MascotImage name="target" size="mascotMedium" />
+        <View style={styles.card}>
+          <Text style={styles.body}>{todayPlanStep.description}</Text>
+        </View>
+        <PrimaryButton title="MARCAR COMO FEITO" onPress={() => togglePlanStep(todayPlanStep.id)} />
+        <Pressable onPress={() => router.push("/plan")}>
+          <Text style={planStepStyles.link}>Ver plano completo de 21 dias</Text>
+        </Pressable>
+      </AppScreen>
+    );
+  }
+
   if (!mission) {
     return (
       <AppScreen>
@@ -50,12 +69,11 @@ export default function MissionScreen() {
           <Text style={styles.kicker}>Missão do Dia</Text>
           <Text style={styles.title}>Nenhuma missão ativa</Text>
         </ScreenSection>
-        <PlanStepCard step={todayPlanStep} onToggle={togglePlanStep} />
         <MascotImage name="target" size="mascotLarge" />
         <EmptyState
           icon={Target}
           title="Lista vazia"
-          body="Converse com o PIXO IA para gerar sua próxima missão."
+          body="Converse com o PIXO IA ou gere um Plano de 21 dias em Mais → Plano de Ação."
         />
       </AppScreen>
     );

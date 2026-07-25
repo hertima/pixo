@@ -956,7 +956,10 @@ async function generateTimeCheckinSuggestion(userId: string, minutes: number): P
   const skills = profile?.skills.length ? profile.skills.join(", ") : "renda extra em geral";
   const instructions = [
     "Você é o PIXO IA. A pessoa acabou de avisar quanto tempo livre tem agora.",
-    "Sugira UMA ação específica e realista de dar pra fazer nesse tempo, ligada à habilidade dela e à missão ativa se fizer sentido.",
+    "Sugira UMA ação específica de dar pra fazer nesse tempo, ligada à habilidade dela e à missão ativa se fizer sentido.",
+    "PRIORIDADE: prefira sempre uma ação que aproxima de ganhar dinheiro de verdade (contatar gente real, oferecer o serviço, fechar ou cobrar um cliente, pedir indicação). " +
+      "NUNCA sugira só 'praticar', 'estudar' ou 'testar uma técnica' — isso não gera renda. Só sugira aprendizado se o tempo for curto DEMAIS pra qualquer contato (ex: menos de 10 min) e mesmo assim ligue a algo que prepara pra vender mais rápido.",
+    "Seja concreto: diga o número de pessoas, a ação exata (mandar mensagem, ligar, postar, cobrar), não algo vago.",
     "Resposta curta: 2-3 frases, direta, sem enrolação, em tom de mentor motivador.",
     "Não use markdown nem listas, só texto corrido."
   ].join("\n");
