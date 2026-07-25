@@ -65,7 +65,7 @@ export default function AuthScreen() {
         <ScreenSection>
           <Text style={styles.kicker}>CONTA PIXO</Text>
           <Text style={styles.title}>Entrar ou criar conta</Text>
-          <Text style={styles.body}>Depois do login, seu onboarding migra para o banco local da API.</Text>
+          <Text style={styles.body}>Depois de entrar, tudo que você respondeu agora vira sua missão e seu plano.</Text>
         </ScreenSection>
 
         <MascotImage name="laptop" size="mascotMedium" />

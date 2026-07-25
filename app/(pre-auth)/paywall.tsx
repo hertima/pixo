@@ -27,8 +27,8 @@ export default function PaywallScreen() {
 
       <EmptyState
         icon={Lock}
-        title="Pagamento ainda não conectado"
-        body="A API local está pronta para impor limites no servidor; a cobrança real entra quando o provedor for definido."
+        title="PIXO Premium está chegando"
+        body="Por enquanto, o PIXO IA, as missões, o Plano de 21 dias e o Radar de Oportunidades são liberados de graça pra todo mundo."
       />
 
       <PrimaryButton title="CONTINUAR GRÁTIS" onPress={continueFree} />

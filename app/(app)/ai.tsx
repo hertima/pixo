@@ -81,7 +81,7 @@ export default function AiScreen() {
               <EmptyState
                 icon={Bot}
                 title="Conversa vazia"
-                body="Envie uma mensagem para a API local acionar a IA com sua memória financeira."
+                body="Conte pro PIXO IA o que você quer alcançar e receba um plano prático pra chegar lá."
               />
               <View style={styles.quickReplies}>
                 {QUICK_REPLIES.map((reply) => (
