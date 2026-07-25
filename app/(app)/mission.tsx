@@ -1,22 +1,26 @@
 import { useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { router } from "expo-router";
 import * as Clipboard from "expo-clipboard";
-import { CheckCircle2, Circle, Target } from "lucide-react-native";
+import { CheckCircle2, Circle, ListChecks, Target } from "lucide-react-native";
 
 import { AppScreen, ScreenSection } from "../../components/AppScreen";
 import { EmptyState } from "../../components/EmptyState";
 import { MascotImage } from "../../components/MascotImage";
 import { PrimaryButton } from "../../components/PrimaryButton";
 import { useMissionToday } from "../../hooks/useMissionToday";
+import { usePlan } from "../../hooks/usePlan";
 import { apiRequest, type MissionStep } from "../../lib/api";
 import { colors, radii, shadows, spacing, typography } from "../../theme/tokens";
 
 export default function MissionScreen() {
   const { data, error, loading, reload } = useMissionToday();
+  const { data: planSteps, toggleStep: togglePlanStep } = usePlan();
   const [busyStepId, setBusyStepId] = useState<string | null>(null);
   const [incrementing, setIncrementing] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [copied, setCopied] = useState(false);
+  const todayPlanStep = planSteps?.find((step) => !step.done) ?? null;
 
   if (loading) {
     return (
@@ -46,6 +50,7 @@ export default function MissionScreen() {
           <Text style={styles.kicker}>Missão do Dia</Text>
           <Text style={styles.title}>Nenhuma missão ativa</Text>
         </ScreenSection>
+        <PlanStepCard step={todayPlanStep} onToggle={togglePlanStep} />
         <MascotImage name="target" size="mascotLarge" />
         <EmptyState
           icon={Target}
@@ -122,6 +127,8 @@ export default function MissionScreen() {
         <Text style={styles.title}>{mission.title}</Text>
       </ScreenSection>
 
+      <PlanStepCard step={todayPlanStep} onToggle={togglePlanStep} />
+
       <MascotImage name="target" size="mascotMedium" />
 
       <View style={styles.card}>
@@ -180,6 +187,100 @@ export default function MissionScreen() {
     </AppScreen>
   );
 }
+
+type PlanStepCardProps = {
+  step: { id: string; title: string; description: string } | null;
+  onToggle: (id: string) => Promise<void>;
+};
+
+function PlanStepCard({ step, onToggle }: PlanStepCardProps) {
+  const [busy, setBusy] = useState(false);
+
+  if (!step) {
+    return null;
+  }
+
+  const stepId = step.id;
+
+  async function markDone() {
+    setBusy(true);
+
+    try {
+      await onToggle(stepId);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Pressable style={planStepStyles.card} onPress={markDone} disabled={busy}>
+      <View style={planStepStyles.header}>
+        <ListChecks color={colors.primary} size={16} />
+        <Text style={planStepStyles.kicker}>Passo de hoje do seu Plano de 21 dias</Text>
+      </View>
+      <Text style={planStepStyles.title}>{step.title}</Text>
+      <Text style={planStepStyles.description}>{step.description}</Text>
+      <View style={planStepStyles.footer}>
+        {busy ? (
+          <ActivityIndicator color={colors.primary} size="small" />
+        ) : (
+          <Circle color={colors.textMuted} size={16} />
+        )}
+        <Text style={planStepStyles.footerLabel}>Toque pra marcar como feito</Text>
+        <Pressable onPress={() => router.push("/plan")}>
+          <Text style={planStepStyles.link}>Ver plano completo</Text>
+        </Pressable>
+      </View>
+    </Pressable>
+  );
+}
+
+const planStepStyles = StyleSheet.create({
+  card: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.borderStrong,
+    borderRadius: radii.md,
+    backgroundColor: colors.surfaceRaised,
+    padding: spacing.md,
+    gap: spacing.xs,
+    ...shadows.card
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xxs
+  },
+  kicker: {
+    color: colors.primary,
+    fontSize: typography.caption,
+    fontWeight: "900"
+  },
+  title: {
+    color: colors.text,
+    fontSize: typography.body,
+    fontWeight: "800"
+  },
+  description: {
+    color: colors.textSoft,
+    fontSize: typography.small
+  },
+  footer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xxs,
+    marginTop: spacing.xxs
+  },
+  footerLabel: {
+    flex: 1,
+    color: colors.textMuted,
+    fontSize: typography.caption
+  },
+  link: {
+    color: colors.primary,
+    fontSize: typography.caption,
+    fontWeight: "800"
+  }
+});
 
 const styles = StyleSheet.create({
   center: {

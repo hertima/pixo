@@ -792,6 +792,7 @@ async function generatePlan(userId: string): Promise<PlanStepRow[]> {
   const instructions = [
     "Você é o PIXO IA, um copiloto financeiro e mentor de renda extra.",
     "Monte um protocolo de 21 dias: exatamente 21 passos, um pra cada dia, em ordem crescente de dificuldade (dia 1 é o mais simples pra começar hoje mesmo).",
+    "IMPORTANTE: isso não é um curso de preparação. Desde o Dia 1, cada passo tem que aproximar a pessoa de ganhar dinheiro de verdade — abordar gente real, oferecer o serviço, tentar vender — nunca um dia inteiro só de estudo, planejamento ou pesquisa sem contato com cliente.",
     "Cada passo precisa ser específico e verificável (não genérico tipo 'se organizar'). Adapte ao tempo livre e à habilidade da pessoa.",
     "O título de cada passo tem que começar com 'Dia N: ' (N de 1 a 21), seguido da ação curta. Ex: 'Dia 1: Definir sua oferta'.",
     'Responda estritamente em JSON, sem markdown: um array com exatamente 21 objetos {"title": "Dia N: ação curta", "description": "1-2 frases explicando o que fazer nesse dia"}.'
