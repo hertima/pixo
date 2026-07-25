@@ -817,7 +817,7 @@ type OutreachPlan = {
 };
 
 function defaultOutreachTemplate(skills: string): string {
-  return `Oi! Vi o {negocio} por aqui e acho que consigo ajudar vocês com ${skills}. Posso te mostrar uma ideia rápida, sem compromisso?`;
+  return `Oi, tudo bem? Sou profissional de ${skills} e trabalho ajudando negócios como o {negocio} a resolver essa necessidade sem dor de cabeça. Já ajudei outros clientes a ganhar tempo e melhorar o resultado nessa área. Posso te mandar mais detalhes e um valor, ou prefere que eu já sugira um horário pra conversarmos?`;
 }
 
 async function planOutreach(skills: string, preferredChannel: string | null): Promise<OutreachPlan> {
@@ -827,7 +827,12 @@ async function planOutreach(skills: string, preferredChannel: string | null): Pr
     "Você é o motor do Radar de Oportunidades do PIXO, um app de renda extra.",
     "Tarefa 1: escolher quais tipos de negócio local costumam precisar do serviço que o usuário oferece.",
     `Escolha entre 3 e 5 categorias desta lista fixa: ${keys.join(", ")}.`,
-    `Tarefa 2: escrever UMA mensagem curta de primeiro contato (estilo ${channelLabel}, informal e direta, sem soar spam), que o usuário possa copiar e colar pra abordar qualquer um desses negócios.`,
+    `Tarefa 2: escrever UMA mensagem de primeiro contato (estilo ${channelLabel}) que o usuário possa copiar e colar pra abordar qualquer um desses negócios.`,
+    "A mensagem tem que soar como um profissional de verdade se apresentando, não um script genérico e raso.",
+    "Regras da mensagem: 3 a 5 frases. Comece se apresentando pelo nome do serviço/ofício (ex: 'Sou churrasqueiro especializado em eventos'). " +
+      "Cite UM benefício concreto e específico pro tipo de negócio (economia de tempo, aumento de vendas, experiência melhor pro cliente final — adapte ao serviço). " +
+      "Evite frases vagas como 'posso ajudar' ou 'bora conversar' sozinhas — seja específico sobre o que você entrega. " +
+      "Termine com uma pergunta objetiva que facilite o negócio responder (ex: perguntar sobre um horário, ou propor enviar um orçamento/portfólio).",
     "A mensagem PRECISA conter o texto literal {negocio} no lugar do nome do negócio, pra ser substituído depois.",
     'Responda estritamente em JSON, sem markdown, no formato exato: {"categories": ["chave1","chave2"], "template": "mensagem com {negocio}"}. Use somente chaves da lista em categories.'
   ].join("\n");
