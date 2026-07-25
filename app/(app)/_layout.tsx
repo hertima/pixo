@@ -1,9 +1,10 @@
 import type { ColorValue } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { Redirect, Tabs } from "expo-router";
 import { BarChart3, Bot, Home, Target, User } from "lucide-react-native";
 
 import { useSession } from "../../hooks/useSession";
-import { colors, iconSizes, typography } from "../../theme/tokens";
+import { colors, iconSizes, radii, typography } from "../../theme/tokens";
 
 type TabIconProps = {
   color: ColorValue;
@@ -44,17 +45,21 @@ export default function AppLayout() {
         }}
       />
       <Tabs.Screen
-        name="ai"
+        name="mission"
         options={{
-          title: "PIXO IA",
-          tabBarIcon: ({ color }: TabIconProps) => <Bot color={iconColor(color)} size={iconSizes.md} />
+          title: "Missões",
+          tabBarIcon: ({ color }: TabIconProps) => <Target color={iconColor(color)} size={iconSizes.md} />
         }}
       />
       <Tabs.Screen
-        name="mission"
+        name="ai"
         options={{
-          title: "Missão",
-          tabBarIcon: ({ color }: TabIconProps) => <Target color={iconColor(color)} size={iconSizes.md} />
+          title: "PIXO IA",
+          tabBarIcon: () => (
+            <View style={styles.fab}>
+              <Bot color={colors.background} size={iconSizes.md} />
+            </View>
+          )
         }}
       />
       <Tabs.Screen
@@ -78,3 +83,15 @@ export default function AppLayout() {
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  fab: {
+    width: 46,
+    height: 46,
+    borderRadius: radii.pill,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.primary,
+    marginBottom: 16
+  }
+});

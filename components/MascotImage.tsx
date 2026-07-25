@@ -22,6 +22,7 @@ export function MascotImage({ name, size = "mascotMedium" }: MascotImageProps) {
 
 const styles = StyleSheet.create({
   image: {
-    alignSelf: "center"
+    alignSelf: "center",
+    flexShrink: 0
   }
 });

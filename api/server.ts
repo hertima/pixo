@@ -32,6 +32,7 @@ type ProfileRow = {
   display_name: string | null;
   preferred_channel: string | null;
   free_time_minutes: number | null;
+  city: string | null;
   city_authorized: boolean;
   skills: string[];
   xp: number;
@@ -70,6 +71,15 @@ type ProgressEventRow = {
   description: string;
   kind: string;
   xp_reward: number;
+  created_at: string;
+};
+
+type OpportunityRow = {
+  id: string;
+  title: string;
+  company: string | null;
+  city: string | null;
+  status: string;
   created_at: string;
 };
 
@@ -375,6 +385,26 @@ app.get("/api/progress/summary", requireAuth, async (request, response, next) =>
   }
 });
 
+app.get("/api/opportunities", requireAuth, async (request, response, next) => {
+  try {
+    const userId = (request as AuthedRequest).userId;
+    const opportunities = await getOpportunities(userId);
+    response.json({ opportunities: opportunities.map(serializeOpportunity) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/opportunities/refresh", requireAuth, async (request, response, next) => {
+  try {
+    const userId = (request as AuthedRequest).userId;
+    const opportunities = await generateOpportunities(userId);
+    response.json({ opportunities: opportunities.map(serializeOpportunity) });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get("/api/achievements", requireAuth, async (request, response, next) => {
   try {
     const userId = (request as AuthedRequest).userId;
@@ -452,7 +482,7 @@ async function getUser(userId: string): Promise<UserRow> {
 
 async function getProfile(userId: string): Promise<ProfileRow | null> {
   const result = await pool.query<ProfileRow>(
-    "SELECT display_name, preferred_channel, free_time_minutes, city_authorized, skills, xp FROM ai_profiles WHERE user_id = $1",
+    "SELECT display_name, preferred_channel, free_time_minutes, city, city_authorized, skills, xp FROM ai_profiles WHERE user_id = $1",
     [userId]
   );
   return result.rows[0] ?? null;
@@ -552,6 +582,82 @@ function serializeSteps(steps: MissionStepRow[]): { id: string; label: string; d
   }));
 }
 
+async function getOpportunities(userId: string): Promise<OpportunityRow[]> {
+  const result = await pool.query<OpportunityRow>(
+    "SELECT id, title, company, city, status, created_at FROM opportunities WHERE user_id = $1 AND status = 'new' ORDER BY created_at DESC LIMIT 20",
+    [userId]
+  );
+  return result.rows;
+}
+
+function serializeOpportunity(opportunity: OpportunityRow): {
+  id: string;
+  title: string;
+  company: string | null;
+  city: string | null;
+  createdAt: string;
+} {
+  return {
+    id: opportunity.id,
+    title: opportunity.title,
+    company: opportunity.company,
+    city: opportunity.city,
+    createdAt: opportunity.created_at
+  };
+}
+
+async function generateOpportunities(userId: string): Promise<OpportunityRow[]> {
+  const profile = await getProfile(userId);
+  const skills = profile?.skills.length ? profile.skills.join(", ") : "serviços gerais para pequenos negócios";
+  const instructions = [
+    "Você é o motor do Radar de Oportunidades do PIXO, um app de renda extra.",
+    "Gere CATEGORIAS de negócio que costumam precisar do tipo de serviço do usuário — nunca invente nomes de empresas reais, endereços ou dados verificáveis.",
+    "Responda estritamente em JSON, sem markdown: um array com exatamente 6 objetos no formato {\"category\": string, \"pitch\": string}.",
+    "\"category\" é um tipo de negócio (ex: Pet shops, Salões de beleza). \"pitch\" é uma frase curta explicando a demanda (ex: Pet shops da região costumam precisar de conteúdo para redes sociais)."
+  ].join("\n");
+
+  const raw = await callOpenAi(instructions, `Habilidades/serviço do usuário: ${skills}.`);
+  const items = parseOpportunityItems(raw);
+
+  await pool.query("DELETE FROM opportunities WHERE user_id = $1 AND status = 'new'", [userId]);
+
+  for (const item of items) {
+    await pool.query(
+      "INSERT INTO opportunities (user_id, title, company, city, status) VALUES ($1, $2, $3, $4, 'new')",
+      [userId, item.pitch, item.category, profile?.city ?? "Sua região"]
+    );
+  }
+
+  return getOpportunities(userId);
+}
+
+function parseOpportunityItems(raw: string): { category: string; pitch: string }[] {
+  const cleaned = raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch {
+    throw new HttpError(502, "Não foi possível gerar oportunidades agora.");
+  }
+
+  if (!Array.isArray(parsed)) {
+    throw new HttpError(502, "Não foi possível gerar oportunidades agora.");
+  }
+
+  return parsed
+    .filter((item): item is { category: string; pitch: string } => {
+      return (
+        Boolean(item) &&
+        typeof item === "object" &&
+        typeof (item as { category?: unknown }).category === "string" &&
+        typeof (item as { pitch?: unknown }).pitch === "string"
+      );
+    })
+    .slice(0, 8);
+}
+
 function serializeProgressEvent(event: ProgressEventRow): {
   id: string;
   amount: number;
@@ -631,7 +737,6 @@ async function askOpenAi(userId: string, message: string): Promise<string> {
   const profile = await getProfile(userId);
   const goal = await getActiveGoal(userId);
   const mission = await getTodaysMission(userId);
-  const model = process.env.OPENAI_MODEL ?? "gpt-5-mini";
   const instructions = [
     "Você é o PIXO IA, um copiloto financeiro e mentor de renda extra.",
     "Use a memória do usuário para sugerir ações práticas, curtas e verificáveis.",
@@ -641,6 +746,15 @@ async function askOpenAi(userId: string, message: string): Promise<string> {
     `Missão ativa: ${mission ? mission.title : "nenhuma"}.`
   ].join("\n");
 
+  return callOpenAi(instructions, message);
+}
+
+async function callOpenAi(instructions: string, input: string): Promise<string> {
+  if (!process.env.OPENAI_API_KEY) {
+    throw new HttpError(503, "OPENAI_API_KEY não configurada na API local.");
+  }
+
+  const model = process.env.OPENAI_MODEL ?? "gpt-5-mini";
   const openAiResponse = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
@@ -650,7 +764,7 @@ async function askOpenAi(userId: string, message: string): Promise<string> {
     body: JSON.stringify({
       model,
       instructions,
-      input: message
+      input
     })
   });
   const payload: unknown = await openAiResponse.json();

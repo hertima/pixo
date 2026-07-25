@@ -127,6 +127,18 @@ export type AchievementsResponse = {
   achievements: Achievement[];
 };
 
+export type Opportunity = {
+  id: string;
+  title: string;
+  company: string | null;
+  city: string | null;
+  createdAt: string;
+};
+
+export type OpportunitiesResponse = {
+  opportunities: Opportunity[];
+};
+
 type ApiRequestOptions = {
   method?: "GET" | "POST" | "PUT" | "DELETE";
   body?: unknown;

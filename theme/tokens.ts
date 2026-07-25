@@ -47,6 +47,7 @@ export const iconSizes = {
 } as const;
 
 export const imageSizes = {
+  mascotTiny: 48,
   mascotSmall: 88,
   mascotMedium: 160,
   mascotLarge: 240
