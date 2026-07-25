@@ -85,21 +85,20 @@ export default function HomeScreen() {
           <ScreenSection>
             <SectionLabel title="Missão de Hoje" icon={Target} />
             {data?.todaysMission ? (
-              <Pressable style={styles.plainCard} onPress={() => router.push("/mission")}>
-                <View style={styles.cardRow}>
-                  <View style={styles.flex}>
-                    <Text style={styles.cardLabel}>{data.todaysMission.title}</Text>
-                    <Text style={styles.body}>{data.todaysMission.description}</Text>
-                    <View style={styles.missionMetaRow}>
-                      <Text style={styles.reward}>Ganhe até R$ {data.todaysMission.estimatedValue.toLocaleString("pt-BR")}</Text>
-                      <Text style={styles.missionSteps}>
-                        {data.todaysMission.currentCount}/{data.todaysMission.targetCount} passos
-                      </Text>
-                    </View>
-                  </View>
-                  <ChevronRight color={colors.primary} />
+              <View style={styles.plainCard}>
+                <Text style={styles.cardLabel}>{data.todaysMission.title}</Text>
+                <Text style={styles.body}>{data.todaysMission.description}</Text>
+                <View style={styles.missionMetaRow}>
+                  <Text style={styles.reward}>Ganhe até R$ {data.todaysMission.estimatedValue.toLocaleString("pt-BR")}</Text>
+                  <Text style={styles.missionSteps}>
+                    {data.todaysMission.currentCount}/{data.todaysMission.targetCount} passos
+                  </Text>
                 </View>
-              </Pressable>
+                <Pressable style={styles.missionButton} onPress={() => router.push("/mission")}>
+                  <Text style={styles.missionButtonLabel}>Ver missão</Text>
+                  <ChevronRight color={colors.background} size={18} />
+                </Pressable>
+              </View>
             ) : (
               <EmptyState
                 icon={Target}
@@ -248,6 +247,21 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: typography.caption,
     fontWeight: "700"
+  },
+  missionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.xxs,
+    marginTop: spacing.xs,
+    minHeight: 44,
+    borderRadius: radii.md,
+    backgroundColor: colors.primary
+  },
+  missionButtonLabel: {
+    color: colors.background,
+    fontSize: typography.small,
+    fontWeight: "900"
   },
   cardRow: {
     flexDirection: "row",

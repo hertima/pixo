@@ -25,6 +25,7 @@ export default function AppLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
+        sceneStyle: styles.scene,
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textMuted,
         tabBarStyle: {
@@ -32,7 +33,8 @@ export default function AppLayout() {
           borderTopColor: colors.border,
           height: 68,
           paddingTop: 8,
-          paddingBottom: 10
+          paddingBottom: 10,
+          flexShrink: 0
         },
         tabBarItemStyle: {
           paddingVertical: 2
@@ -103,6 +105,10 @@ export default function AppLayout() {
 }
 
 const styles = StyleSheet.create({
+  scene: {
+    flex: 1,
+    minHeight: 0
+  },
   fab: {
     width: 40,
     height: 40,
