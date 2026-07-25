@@ -1,7 +1,7 @@
 import type { ColorValue } from "react-native";
 import { StyleSheet, View } from "react-native";
 import { Redirect, Tabs } from "expo-router";
-import { BarChart3, Bot, Home, Target, User } from "lucide-react-native";
+import { BarChart3, Bot, Home, Radar, Target, User } from "lucide-react-native";
 
 import { useSession } from "../../hooks/useSession";
 import { colors, iconSizes, radii, typography } from "../../theme/tokens";
@@ -37,6 +37,7 @@ export default function AppLayout() {
         }
       }}
     >
+      <Tabs.Screen name="index" options={{ href: null }} />
       <Tabs.Screen
         name="home"
         options={{
@@ -70,6 +71,13 @@ export default function AppLayout() {
         }}
       />
       <Tabs.Screen
+        name="radar"
+        options={{
+          title: "Radar",
+          tabBarIcon: ({ color }: TabIconProps) => <Radar color={iconColor(color)} size={iconSizes.md} />
+        }}
+      />
+      <Tabs.Screen
         name="profile"
         options={{
           title: "Mais",
@@ -78,9 +86,10 @@ export default function AppLayout() {
       />
       <Tabs.Screen name="evolution" options={{ href: null }} />
       <Tabs.Screen name="achievements" options={{ href: null }} />
-      <Tabs.Screen name="radar" options={{ href: null }} />
       <Tabs.Screen name="simulator" options={{ href: null }} />
       <Tabs.Screen name="edit-profile" options={{ href: null }} />
+      <Tabs.Screen name="plan" options={{ href: null }} />
+      <Tabs.Screen name="checkin" options={{ href: null }} />
     </Tabs>
   );
 }

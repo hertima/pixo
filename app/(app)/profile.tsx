@@ -7,7 +7,9 @@ import {
   Bot,
   Calculator,
   ChevronRight,
+  Clock,
   HelpCircle,
+  ListChecks,
   LogOut,
   Moon,
   Pencil,
@@ -70,7 +72,8 @@ export default function ProfileScreen() {
         <MenuItem icon={Pencil} label="Editar perfil" onPress={() => router.push("/edit-profile")} />
         <MenuItem icon={Sparkles} label="PIXO Evolução" onPress={() => router.push("/evolution")} />
         <MenuItem icon={Award} label="Conquistas" onPress={() => router.push("/achievements")} />
-        <MenuItem icon={Radar} label="Radar de Oportunidades" onPress={() => router.push("/radar")} />
+        <MenuItem icon={ListChecks} label="Plano de Ação" onPress={() => router.push("/plan")} />
+        <MenuItem icon={Clock} label="Check-in de Tempo" onPress={() => router.push("/checkin")} />
         <MenuItem icon={Calculator} label="Simulador de Ganhos" onPress={() => router.push("/simulator")} />
         <MenuItem icon={Bot} label="PIXO IA" onPress={() => router.push("/ai")} />
         <View style={styles.menuRow}>

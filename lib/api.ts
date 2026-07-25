@@ -146,6 +146,21 @@ export type OpportunitiesResponse = {
   opportunities: Opportunity[];
 };
 
+export type PlanStep = {
+  id: string;
+  title: string;
+  description: string;
+  done: boolean;
+};
+
+export type PlanResponse = {
+  steps: PlanStep[];
+};
+
+export type CheckinResponse = {
+  suggestion: string;
+};
+
 type ApiRequestOptions = {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;

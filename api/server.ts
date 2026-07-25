@@ -372,6 +372,16 @@ app.post("/api/missions/:id/complete", requireAuth, async (request, response, ne
       "INSERT INTO progress_events (user_id, amount, description, kind, xp_reward) VALUES ($1, $2, $3, 'mission_completed', $4)",
       [userId, mission.estimated_value, `Missão concluída: ${mission.title}`, mission.xp_reward]
     );
+
+    const activeGoal = await getActiveGoal(userId);
+
+    if (activeGoal) {
+      await pool.query("UPDATE goals SET current_amount = current_amount + $2 WHERE id = $1", [
+        activeGoal.id,
+        mission.estimated_value
+      ]);
+    }
+
     await syncAchievements(userId);
 
     response.json({ ok: true });
@@ -511,6 +521,55 @@ app.get("/api/achievements", requireAuth, async (request, response, next) => {
         unlockedAt: unlockedMap.get(achievement.key) ?? null
       }))
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/plan", requireAuth, async (request, response, next) => {
+  try {
+    const userId = (request as AuthedRequest).userId;
+    const steps = await getPlanSteps(userId);
+    response.json({ steps: steps.map(serializePlanStep) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/plan/generate", requireAuth, async (request, response, next) => {
+  try {
+    const userId = (request as AuthedRequest).userId;
+    const steps = await generatePlan(userId);
+    response.json({ steps: steps.map(serializePlanStep) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/plan/steps/:id/toggle", requireAuth, async (request, response, next) => {
+  try {
+    const userId = (request as AuthedRequest).userId;
+    const stepId = readParam(request.params.id, "Passo");
+    await pool.query("UPDATE plan_steps SET done = NOT done WHERE id = $1 AND user_id = $2", [stepId, userId]);
+    const steps = await getPlanSteps(userId);
+    response.json({ steps: steps.map(serializePlanStep) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/checkin", requireAuth, async (request, response, next) => {
+  try {
+    const userId = (request as AuthedRequest).userId;
+    const body = readBody(request);
+    const minutes = typeof body.minutes === "number" && body.minutes > 0 ? body.minutes : null;
+
+    if (!minutes) {
+      throw new HttpError(400, "Informe quantos minutos livres você tem.");
+    }
+
+    const suggestion = await generateTimeCheckinSuggestion(userId, minutes);
+    response.json({ suggestion });
   } catch (error) {
     next(error);
   }
@@ -706,6 +765,137 @@ function serializeOpportunity(opportunity: OpportunityRow): {
   };
 }
 
+type PlanStepRow = {
+  id: string;
+  title: string;
+  description: string;
+  done: boolean;
+  sort_order: number;
+};
+
+async function getPlanSteps(userId: string): Promise<PlanStepRow[]> {
+  const result = await pool.query<PlanStepRow>(
+    "SELECT id, title, description, done, sort_order FROM plan_steps WHERE user_id = $1 ORDER BY sort_order ASC",
+    [userId]
+  );
+  return result.rows;
+}
+
+function serializePlanStep(step: PlanStepRow): { id: string; title: string; description: string; done: boolean } {
+  return { id: step.id, title: step.title, description: step.description, done: step.done };
+}
+
+async function generatePlan(userId: string): Promise<PlanStepRow[]> {
+  const profile = await getProfile(userId);
+  const goal = await getActiveGoal(userId);
+  const skills = profile?.skills.length ? profile.skills.join(", ") : "serviços gerais para pequenos negócios";
+  const instructions = [
+    "Você é o PIXO IA, um copiloto financeiro e mentor de renda extra.",
+    "Monte um protocolo de 21 dias: exatamente 21 passos, um pra cada dia, em ordem crescente de dificuldade (dia 1 é o mais simples pra começar hoje mesmo).",
+    "Cada passo precisa ser específico e verificável (não genérico tipo 'se organizar'). Adapte ao tempo livre e à habilidade da pessoa.",
+    "O título de cada passo tem que começar com 'Dia N: ' (N de 1 a 21), seguido da ação curta. Ex: 'Dia 1: Definir sua oferta'.",
+    'Responda estritamente em JSON, sem markdown: um array com exatamente 21 objetos {"title": "Dia N: ação curta", "description": "1-2 frases explicando o que fazer nesse dia"}.'
+  ].join("\n");
+  const input = [
+    `Habilidade/serviço: ${skills}.`,
+    `Meta: ${goal ? `R$ ${goal.target_amount} por mês` : "não definida"}.`,
+    `Tempo livre por dia: ${profile?.free_time_minutes ? `${profile.free_time_minutes} minutos` : "não informado"}.`
+  ].join(" ");
+
+  let steps: { title: string; description: string }[] = [];
+
+  try {
+    const raw = await callOpenAi(instructions, input);
+    const cleaned = raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+    const parsed: unknown = JSON.parse(cleaned);
+
+    if (Array.isArray(parsed)) {
+      steps = parsed.filter(
+        (item): item is { title: string; description: string } =>
+          Boolean(item) &&
+          typeof item === "object" &&
+          typeof (item as { title?: unknown }).title === "string" &&
+          typeof (item as { description?: unknown }).description === "string"
+      );
+    }
+  } catch {
+    // Falls through to the default plan below.
+  }
+
+  if (steps.length !== 21) {
+    steps = buildDefaultTwentyOneDayPlan();
+  }
+
+  await pool.query("DELETE FROM plan_steps WHERE user_id = $1", [userId]);
+
+  for (let index = 0; index < steps.length; index += 1) {
+    const step = steps[index];
+
+    if (!step) {
+      continue;
+    }
+
+    await pool.query("INSERT INTO plan_steps (user_id, title, description, sort_order) VALUES ($1, $2, $3, $4)", [
+      userId,
+      step.title,
+      step.description,
+      index
+    ]);
+  }
+
+  return getPlanSteps(userId);
+}
+
+function buildDefaultTwentyOneDayPlan(): { title: string; description: string }[] {
+  const days = [
+    "Escreva em uma frase o que você vai oferecer e pra quem.",
+    "Defina o preço do seu serviço e o que está incluso.",
+    "Liste 10 pessoas ou negócios reais pra abordar.",
+    "Prepare uma mensagem curta de apresentação.",
+    "Envie a mensagem pros primeiros 5 contatos da lista.",
+    "Envie pros outros 5 contatos da lista.",
+    "Responda quem chamou e agende o que for possível.",
+    "Ajuste a mensagem com base nas respostas que recebeu.",
+    "Liste mais 10 contatos novos pra abordar.",
+    "Envie a mensagem ajustada pra esses novos contatos.",
+    "Peça pra 3 pessoas te indicarem alguém que precise do serviço.",
+    "Publique sobre seu serviço em uma rede social ou grupo.",
+    "Faça o primeiro atendimento ou entrega combinado.",
+    "Peça um feedback sincero de quem você atendeu.",
+    "Ajuste o que não funcionou bem no primeiro atendimento.",
+    "Aborde mais 10 contatos novos.",
+    "Feche pelo menos 1 novo atendimento essa semana.",
+    "Organize seus ganhos e anote quanto já faturou.",
+    "Pergunte aos clientes atendidos se conhecem mais alguém.",
+    "Planeje como repetir o que deu mais resultado até aqui.",
+    "Revise as 3 semanas e defina a meta dos próximos 21 dias."
+  ];
+
+  return days.map((description, index) => ({
+    title: `Dia ${index + 1}: ${description.replace(/\.$/, "")}`,
+    description
+  }));
+}
+
+async function generateTimeCheckinSuggestion(userId: string, minutes: number): Promise<string> {
+  const profile = await getProfile(userId);
+  const mission = await getTodaysMission(userId);
+  const skills = profile?.skills.length ? profile.skills.join(", ") : "renda extra em geral";
+  const instructions = [
+    "Você é o PIXO IA. A pessoa acabou de avisar quanto tempo livre tem agora.",
+    "Sugira UMA ação específica e realista de dar pra fazer nesse tempo, ligada à habilidade dela e à missão ativa se fizer sentido.",
+    "Resposta curta: 2-3 frases, direta, sem enrolação, em tom de mentor motivador.",
+    "Não use markdown nem listas, só texto corrido."
+  ].join("\n");
+  const input = [
+    `Tempo livre agora: ${minutes} minutos.`,
+    `Habilidade/serviço: ${skills}.`,
+    `Missão ativa: ${mission ? mission.title : "nenhuma"}.`
+  ].join(" ");
+
+  return callOpenAi(instructions, input);
+}
+
 type OpportunityCategoryKey =
   | "pet"
   | "veterinary"
@@ -785,7 +975,7 @@ async function generateOpportunities(userId: string, cityInput?: string, skillIn
 
   const skills =
     skillInput?.trim() || (profile?.skills.length ? profile.skills.join(", ") : "serviços gerais para pequenos negócios");
-  const plan = await planOutreach(skills, profile?.preferred_channel ?? null);
+  const plan = await planOutreach(skills, profile?.preferred_channel ?? null, profile?.display_name ?? null);
   const results = await queryOverpass(latitude, longitude, plan.categories);
 
   await pool.query("DELETE FROM opportunities WHERE user_id = $1 AND status = 'new'", [userId]);
@@ -864,9 +1054,16 @@ function defaultOutreachTemplate(skills: string): string {
   return `Oi, tudo bem? Sou profissional de ${skills} e trabalho ajudando negócios como o {negocio} a resolver essa necessidade sem dor de cabeça. Já ajudei outros clientes a ganhar tempo e melhorar o resultado nessa área. Posso te mandar mais detalhes e um valor, ou prefere que eu já sugira um horário pra conversarmos?`;
 }
 
-async function planOutreach(skills: string, preferredChannel: string | null): Promise<OutreachPlan> {
+async function planOutreach(
+  skills: string,
+  preferredChannel: string | null,
+  displayName: string | null
+): Promise<OutreachPlan> {
   const keys = Object.keys(OPPORTUNITY_CATEGORIES) as OpportunityCategoryKey[];
   const channelLabel = preferredChannel ?? "WhatsApp";
+  const signatureInstruction = displayName
+    ? `Assine a mensagem com o nome "${displayName}" (ex: se apresente como "${displayName}, especialista em ...").`
+    : "Não invente um nome — não assine com nome nenhum, deixe a mensagem sem assinatura.";
   const instructions = [
     "Você é o motor do Radar de Oportunidades do PIXO, um app de renda extra.",
     "Tarefa 1: escolher quais tipos de negócio local costumam precisar do serviço que o usuário oferece.",
@@ -875,7 +1072,8 @@ async function planOutreach(skills: string, preferredChannel: string | null): Pr
     `Tarefa 2: escrever UMA mensagem de primeiro contato (estilo ${channelLabel}) que o usuário possa copiar e colar pra abordar qualquer um desses negócios.`,
     "A mensagem tem que soar como um profissional de verdade se apresentando, não um script genérico e raso.",
     "Regras da mensagem: 3 a 5 frases. Comece se apresentando pelo nome do serviço/ofício (ex: 'Sou churrasqueiro especializado em eventos'). " +
-      "Cite UM benefício concreto e específico pro tipo de negócio (economia de tempo, aumento de vendas, experiência melhor pro cliente final — adapte ao serviço). " +
+      signatureInstruction +
+      " Cite UM benefício concreto e específico pro tipo de negócio (economia de tempo, aumento de vendas, experiência melhor pro cliente final — adapte ao serviço). " +
       "Evite frases vagas como 'posso ajudar' ou 'bora conversar' sozinhas — seja específico sobre o que você entrega. " +
       "Termine com uma pergunta objetiva que facilite o negócio responder (ex: perguntar sobre um horário, ou propor enviar um orçamento/portfólio).",
     "A mensagem PRECISA conter o texto literal {negocio} no lugar do nome do negócio, pra ser substituído depois.",

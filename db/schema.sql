@@ -84,6 +84,18 @@ ALTER TABLE progress_events ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 
 ALTER TABLE progress_events ADD COLUMN IF NOT EXISTS xp_reward INTEGER NOT NULL DEFAULT 0;
 CREATE INDEX IF NOT EXISTS progress_events_user_id_created_at_idx ON progress_events (user_id, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS plan_steps (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  done BOOLEAN NOT NULL DEFAULT false,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS plan_steps_user_id_idx ON plan_steps (user_id, sort_order);
+
 CREATE TABLE IF NOT EXISTS user_achievements (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
