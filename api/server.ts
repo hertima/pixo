@@ -788,90 +788,84 @@ async function planOutreach(skills: string, preferredChannel: string | null): Pr
   return { categories: DEFAULT_OPPORTUNITY_CATEGORIES, template: defaultOutreachTemplate(skills) };
 }
 
-function buildOverpassQuery(lat: number, lon: number, categories: OpportunityCategoryKey[]): string {
-  const radiusMeters = 6000;
-  const blocks = categories
-    .flatMap((key) => OPPORTUNITY_CATEGORIES[key].filters)
+function buildCategoryQuery(lat: number, lon: number, key: OpportunityCategoryKey): string {
+  const radiusMeters = 5000;
+  const blocks = OPPORTUNITY_CATEGORIES[key].filters
     .map((filter) => {
       const [tagKey, tagValue] = filter.split("=");
       return `nwr["${tagKey}"="${tagValue}"](around:${radiusMeters},${lat},${lon});`;
     })
     .join("");
 
-  return `[out:json][timeout:20];(${blocks});out center 40;`;
+  return `[out:json][timeout:10];(${blocks});out center 12;`;
 }
 
-function categorizeElement(tags: Record<string, string>, categories: OpportunityCategoryKey[]): string {
-  for (const key of categories) {
-    for (const filter of OPPORTUNITY_CATEGORIES[key].filters) {
-      const tagKey = filter.split("=")[0] ?? "";
-      const tagValue = filter.split("=")[1] ?? "";
+type OverpassResult = { name: string; categoryLabel: string; distanceMeters: number };
 
-      if (tagKey && tags[tagKey] === tagValue) {
-        return OPPORTUNITY_CATEGORIES[key].label;
-      }
+async function queryOverpassForCategory(lat: number, lon: number, key: OpportunityCategoryKey): Promise<OverpassResult[]> {
+  const query = buildCategoryQuery(lat, lon, key);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+
+  try {
+    const response = await fetch("https://overpass-api.de/api/interpreter", {
+      method: "POST",
+      headers: {
+        "User-Agent": "PixoApp/1.0 (contato@pixo.app)",
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: `data=${encodeURIComponent(query)}`,
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      return [];
     }
-  }
 
-  return "Negócio local";
+    const payload: unknown = await response.json();
+
+    if (!payload || typeof payload !== "object" || !("elements" in payload) || !Array.isArray(payload.elements)) {
+      return [];
+    }
+
+    const categoryLabel = OPPORTUNITY_CATEGORIES[key].label;
+
+    return payload.elements
+      .map((element) => {
+        if (!element || typeof element !== "object") {
+          return null;
+        }
+
+        const record = element as {
+          tags?: Record<string, string>;
+          lat?: number;
+          lon?: number;
+          center?: { lat: number; lon: number };
+        };
+        const name = record.tags?.name;
+        const elementLat = record.lat ?? record.center?.lat;
+        const elementLon = record.lon ?? record.center?.lon;
+
+        if (!name || elementLat === undefined || elementLon === undefined) {
+          return null;
+        }
+
+        return { name, categoryLabel, distanceMeters: haversineMeters(lat, lon, elementLat, elementLon) };
+      })
+      .filter((item): item is OverpassResult => item !== null);
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
-async function queryOverpass(
-  lat: number,
-  lon: number,
-  categories: OpportunityCategoryKey[]
-): Promise<{ name: string; categoryLabel: string; distanceMeters: number }[]> {
-  const query = buildOverpassQuery(lat, lon, categories);
-  const response = await fetch("https://overpass-api.de/api/interpreter", {
-    method: "POST",
-    headers: {
-      "User-Agent": "PixoApp/1.0 (contato@pixo.app)",
-      "Content-Type": "application/x-www-form-urlencoded"
-    },
-    body: `data=${encodeURIComponent(query)}`
-  });
-
-  if (!response.ok) {
-    return [];
-  }
-
-  const payload: unknown = await response.json();
-
-  if (!payload || typeof payload !== "object" || !("elements" in payload) || !Array.isArray(payload.elements)) {
-    return [];
-  }
-
-  const results = payload.elements
-    .map((element) => {
-      if (!element || typeof element !== "object") {
-        return null;
-      }
-
-      const record = element as {
-        tags?: Record<string, string>;
-        lat?: number;
-        lon?: number;
-        center?: { lat: number; lon: number };
-      };
-      const name = record.tags?.name;
-      const elementLat = record.lat ?? record.center?.lat;
-      const elementLon = record.lon ?? record.center?.lon;
-
-      if (!name || elementLat === undefined || elementLon === undefined) {
-        return null;
-      }
-
-      return {
-        name,
-        categoryLabel: categorizeElement(record.tags ?? {}, categories),
-        distanceMeters: haversineMeters(lat, lon, elementLat, elementLon)
-      };
-    })
-    .filter((item): item is { name: string; categoryLabel: string; distanceMeters: number } => item !== null)
-    .sort((a, b) => a.distanceMeters - b.distanceMeters);
+async function queryOverpass(lat: number, lon: number, categories: OpportunityCategoryKey[]): Promise<OverpassResult[]> {
+  const perCategory = await Promise.all(categories.map((key) => queryOverpassForCategory(lat, lon, key)));
+  const results = perCategory.flat().sort((a, b) => a.distanceMeters - b.distanceMeters);
 
   const seen = new Set<string>();
-  const deduped: typeof results = [];
+  const deduped: OverpassResult[] = [];
 
   for (const item of results) {
     if (!seen.has(item.name)) {
