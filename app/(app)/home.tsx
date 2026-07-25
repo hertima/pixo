@@ -100,11 +100,17 @@ export default function HomeScreen() {
                 </Pressable>
               </View>
             ) : (
-              <EmptyState
-                icon={Target}
-                title="Nenhuma missão ativa"
-                body="Converse com a IA para gerar uma missão ligada ao seu objetivo."
-              />
+              <View style={styles.emptyMissionGroup}>
+                <EmptyState
+                  icon={Target}
+                  title="Nenhuma missão ativa"
+                  body="Gere seu Plano de 21 dias ou converse com o PIXO IA pra criar sua próxima missão."
+                />
+                <Pressable style={styles.missionButton} onPress={() => router.push("/plan")}>
+                  <Text style={styles.missionButtonLabel}>Ver Plano de 21 dias</Text>
+                  <ChevronRight color={colors.background} size={18} />
+                </Pressable>
+              </View>
             )}
           </ScreenSection>
 
@@ -247,6 +253,9 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: typography.caption,
     fontWeight: "700"
+  },
+  emptyMissionGroup: {
+    gap: spacing.sm
   },
   missionButton: {
     flexDirection: "row",
