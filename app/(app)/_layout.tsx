@@ -31,21 +31,23 @@ export default function AppLayout() {
         sceneStyle: styles.scene,
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textMuted,
+        tabBarShowLabel: true,
         tabBarStyle: {
           backgroundColor: colors.surface,
           borderTopColor: colors.border,
-          height: 58 + bottomInset,
           paddingTop: 8,
           paddingBottom: bottomInset,
           flexShrink: 0
         },
         tabBarItemStyle: {
-          paddingVertical: 2
+          paddingVertical: 2,
+          minHeight: 48
         },
         tabBarLabelStyle: {
           fontSize: typography.caption,
           fontWeight: "700",
-          marginTop: 2
+          marginTop: 2,
+          flexShrink: 0
         }
       }}
     >
