@@ -14,6 +14,7 @@ import { colors, radii, shadows, spacing, typography } from "../../theme/tokens"
 export default function MissionScreen() {
   const { data, error, loading, reload } = useMissionToday();
   const [busyStepId, setBusyStepId] = useState<string | null>(null);
+  const [incrementing, setIncrementing] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -71,6 +72,21 @@ export default function MissionScreen() {
       await reload();
     } finally {
       setBusyStepId(null);
+    }
+  }
+
+  async function incrementProgress() {
+    if (!mission || incrementing || mission.currentCount >= mission.targetCount) {
+      return;
+    }
+
+    setIncrementing(true);
+
+    try {
+      await apiRequest(`/api/missions/${mission.id}/increment`, { method: "POST" });
+      await reload();
+    } finally {
+      setIncrementing(false);
     }
   }
 
@@ -136,6 +152,12 @@ export default function MissionScreen() {
             </Pressable>
           ))}
         </View>
+      ) : !isCompleted && mission.currentCount < mission.targetCount ? (
+        <PrimaryButton
+          title={incrementing ? "REGISTRANDO..." : "+1"}
+          onPress={incrementProgress}
+          loading={incrementing}
+        />
       ) : null}
 
       {isCompleted ? (

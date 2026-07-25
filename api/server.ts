@@ -337,6 +337,22 @@ app.post("/api/missions/:id/steps/:stepId/toggle", requireAuth, async (request, 
   }
 });
 
+app.post("/api/missions/:id/increment", requireAuth, async (request, response, next) => {
+  try {
+    const userId = (request as AuthedRequest).userId;
+    const mission = await getOwnedMission(userId, readParam(request.params.id, "Missão"));
+    const nextCount = Math.min(mission.target_count, mission.current_count + 1);
+
+    await pool.query("UPDATE missions SET current_count = $2 WHERE id = $1", [mission.id, nextCount]);
+
+    const updatedMission = await getOwnedMission(userId, mission.id);
+    const steps = await getMissionSteps(mission.id);
+    response.json({ mission: serializeMission(updatedMission), steps: serializeSteps(steps) });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post("/api/missions/:id/complete", requireAuth, async (request, response, next) => {
   try {
     const userId = (request as AuthedRequest).userId;
@@ -1119,21 +1135,11 @@ async function migrateDraft(userId: string, draft: OnboardingDraft): Promise<voi
   const activeMission = await getTodaysMission(userId);
 
   if (!activeMission) {
-    const inserted = await pool.query<{ id: string }>(
+    await pool.query(
       `INSERT INTO missions (user_id, title, description, estimated_value, status, source, target_count, xp_reward)
-       VALUES ($1, $2, $3, $4, 'active', 'onboarding', $5, $6) RETURNING id`,
-      [userId, mission.title, mission.description, mission.estimatedValue, 3, 30]
+       VALUES ($1, $2, $3, $4, 'active', 'onboarding', $5, $6)`,
+      [userId, mission.title, mission.description, mission.estimatedValue, mission.targetCount, 40]
     );
-    const missionId = firstRow(inserted.rows).id;
-    const steps = ["Preparar uma oferta simples", "Enviar para 5 contatos", "Fechar o primeiro cliente"];
-
-    for (let index = 0; index < steps.length; index += 1) {
-      await pool.query("INSERT INTO mission_steps (mission_id, label, sort_order) VALUES ($1, $2, $3)", [
-        missionId,
-        steps[index],
-        index
-      ]);
-    }
   }
 }
 
@@ -1257,7 +1263,12 @@ function getJwtSecret(): string {
   return process.env.JWT_SECRET ?? "dev_pixo_secret_troque_na_vps";
 }
 
-function buildInitialMission(draft: OnboardingDraft): { title: string; description: string; estimatedValue: number } {
+function buildInitialMission(draft: OnboardingDraft): {
+  title: string;
+  description: string;
+  estimatedValue: number;
+  targetCount: number;
+} {
   const channelLabel = {
     whatsapp: "WhatsApp",
     instagram: "Instagram",
@@ -1266,9 +1277,10 @@ function buildInitialMission(draft: OnboardingDraft): { title: string; descripti
   const estimatedValue = Math.max(20, Math.min(80, Math.round(draft.monthlyGoal * 0.16)));
 
   return {
-    title: `Conseguir o primeiro cliente pelo ${channelLabel}`,
-    description: "Fale com contatos reais oferecendo um serviço simples que você consiga entregar hoje.",
-    estimatedValue
+    title: `Enviar mensagem para 20 pessoas pelo ${channelLabel}`,
+    description: "Ofereça um serviço simples que você consiga entregar hoje. Toque em +1 a cada mensagem enviada, até fechar o primeiro cliente.",
+    estimatedValue,
+    targetCount: 20
   };
 }
 
