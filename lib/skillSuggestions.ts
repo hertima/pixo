@@ -1,0 +1,21 @@
+export const SKILL_SUGGESTIONS: string[] = [
+  "Garçom/garçonete",
+  "Bartender",
+  "Cozinheiro(a)",
+  "Confeiteiro(a)",
+  "Churrasqueiro(a)",
+  "Diarista/faxina",
+  "Passear com cães",
+  "Manicure",
+  "Cabeleireiro(a)",
+  "Personal trainer",
+  "Aula particular",
+  "Fotógrafo(a)",
+  "Social media",
+  "Montador de móveis",
+  "Motorista de app/entregas",
+  "Limpar piscina",
+  "Costura",
+  "Animador de festa infantil",
+  "Cuidador(a) de idosos"
+];

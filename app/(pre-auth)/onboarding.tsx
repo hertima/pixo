@@ -6,6 +6,7 @@ import { ArrowLeft, ArrowRight } from "lucide-react-native";
 import { AppScreen, ScreenSection } from "../../components/AppScreen";
 import { MascotImage } from "../../components/MascotImage";
 import { PrimaryButton } from "../../components/PrimaryButton";
+import { SKILL_SUGGESTIONS } from "../../lib/skillSuggestions";
 import { saveOnboardingDraft, type MissionChannel } from "../../lib/storage";
 import { colors, radii, spacing, typography } from "../../theme/tokens";
 
@@ -148,13 +149,22 @@ export default function OnboardingScreen() {
           ) : null}
 
           {step === 4 ? (
-            <TextInput
-              onChangeText={setSkill}
-              placeholder="ex: churrasqueiro, limpar piscina, social media"
-              placeholderTextColor={colors.textMuted}
-              style={styles.input}
-              value={skill}
-            />
+            <>
+              <TextInput
+                onChangeText={setSkill}
+                placeholder="ex: churrasqueiro, limpar piscina, social media"
+                placeholderTextColor={colors.textMuted}
+                style={styles.input}
+                value={skill}
+              />
+              <View style={styles.suggestions}>
+                {SKILL_SUGGESTIONS.map((suggestion) => (
+                  <Pressable key={suggestion} onPress={() => setSkill(suggestion)} style={styles.suggestionChip}>
+                    <Text style={styles.suggestionLabel}>{suggestion}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </>
           ) : null}
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -259,5 +269,23 @@ const styles = StyleSheet.create({
   },
   actionFlex: {
     flex: 1
+  },
+  suggestions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.xs
+  },
+  suggestionChip: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xxs,
+    backgroundColor: colors.surface
+  },
+  suggestionLabel: {
+    color: colors.textSoft,
+    fontSize: typography.caption,
+    fontWeight: "700"
   }
 });

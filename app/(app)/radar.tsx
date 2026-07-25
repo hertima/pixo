@@ -10,6 +10,7 @@ import { MascotImage } from "../../components/MascotImage";
 import { PrimaryButton } from "../../components/PrimaryButton";
 import { useBootstrap } from "../../hooks/useBootstrap";
 import { useOpportunities } from "../../hooks/useOpportunities";
+import { SKILL_SUGGESTIONS } from "../../lib/skillSuggestions";
 import { colors, radii, shadows, spacing, typography } from "../../theme/tokens";
 
 export default function RadarScreen() {
@@ -53,6 +54,16 @@ export default function RadarScreen() {
         placeholderTextColor={colors.textMuted}
         style={styles.skillInput}
       />
+
+      {!skill ? (
+        <View style={styles.suggestions}>
+          {SKILL_SUGGESTIONS.map((suggestion) => (
+            <Pressable key={suggestion} onPress={() => setSkill(suggestion)} style={styles.suggestionChip}>
+              <Text style={styles.suggestionLabel}>{suggestion}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
 
       {opportunities.length > 0 && opportunities[0]?.priceHint ? (
         <View style={styles.priceBanner}>
@@ -229,5 +240,23 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontSize: typography.caption,
     fontWeight: "800"
+  },
+  suggestions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.xs
+  },
+  suggestionChip: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xxs,
+    backgroundColor: colors.surface
+  },
+  suggestionLabel: {
+    color: colors.textSoft,
+    fontSize: typography.caption,
+    fontWeight: "700"
   }
 });

@@ -7,6 +7,7 @@ import { BackHeader } from "../../components/BackHeader";
 import { PrimaryButton } from "../../components/PrimaryButton";
 import { useBootstrap } from "../../hooks/useBootstrap";
 import { apiRequest } from "../../lib/api";
+import { SKILL_SUGGESTIONS } from "../../lib/skillSuggestions";
 import { colors, radii, spacing, typography } from "../../theme/tokens";
 
 const CHANNELS: { key: "whatsapp" | "instagram" | "email"; label: string }[] = [
@@ -128,6 +129,13 @@ export default function EditProfileScreen() {
           style={styles.input}
           placeholderTextColor={colors.textMuted}
         />
+        <View style={styles.chips}>
+          {SKILL_SUGGESTIONS.map((suggestion) => (
+            <Pressable key={suggestion} onPress={() => setSkill(suggestion)} style={styles.chip}>
+              <Text style={styles.chipLabel}>{suggestion}</Text>
+            </Pressable>
+          ))}
+        </View>
       </View>
 
       <PrimaryButton title={saved ? "SALVO!" : "SALVAR"} onPress={save} loading={saving} />
