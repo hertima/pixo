@@ -102,6 +102,9 @@ CREATE TABLE IF NOT EXISTS opportunities (
   pitch_message TEXT,
   address TEXT,
   phone TEXT,
+  website TEXT,
+  opening_hours TEXT,
+  price_hint TEXT,
   status TEXT NOT NULL DEFAULT 'new',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -109,6 +112,9 @@ CREATE TABLE IF NOT EXISTS opportunities (
 ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS pitch_message TEXT;
 ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS address TEXT;
 ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS phone TEXT;
+ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS website TEXT;
+ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS opening_hours TEXT;
+ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS price_hint TEXT;
 
 CREATE TABLE IF NOT EXISTS mentor_messages (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

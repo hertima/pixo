@@ -136,6 +136,9 @@ export type Opportunity = {
   pitchMessage: string | null;
   address: string | null;
   phone: string | null;
+  website: string | null;
+  openingHours: string | null;
+  priceHint: string | null;
   createdAt: string;
 };
 

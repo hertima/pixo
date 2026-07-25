@@ -84,6 +84,9 @@ type OpportunityRow = {
   pitch_message: string | null;
   address: string | null;
   phone: string | null;
+  website: string | null;
+  opening_hours: string | null;
+  price_hint: string | null;
   status: string;
   created_at: string;
 };
@@ -652,7 +655,8 @@ function serializeSteps(steps: MissionStepRow[]): { id: string; label: string; d
 
 async function getOpportunities(userId: string): Promise<OpportunityRow[]> {
   const result = await pool.query<OpportunityRow>(
-    "SELECT id, title, company, city, pitch_message, address, phone, status, created_at FROM opportunities WHERE user_id = $1 AND status = 'new' ORDER BY created_at DESC LIMIT 20",
+    `SELECT id, title, company, city, pitch_message, address, phone, website, opening_hours, price_hint, status, created_at
+     FROM opportunities WHERE user_id = $1 AND status = 'new' ORDER BY created_at DESC LIMIT 20`,
     [userId]
   );
   return result.rows;
@@ -666,6 +670,9 @@ function serializeOpportunity(opportunity: OpportunityRow): {
   pitchMessage: string | null;
   address: string | null;
   phone: string | null;
+  website: string | null;
+  openingHours: string | null;
+  priceHint: string | null;
   createdAt: string;
 } {
   return {
@@ -676,6 +683,9 @@ function serializeOpportunity(opportunity: OpportunityRow): {
     pitchMessage: opportunity.pitch_message,
     address: opportunity.address,
     phone: opportunity.phone,
+    website: opportunity.website,
+    openingHours: opportunity.opening_hours,
+    priceHint: opportunity.price_hint,
     createdAt: opportunity.created_at
   };
 }
@@ -768,20 +778,22 @@ async function generateOpportunities(userId: string, cityInput?: string, skillIn
     for (const key of plan.categories) {
       const category = OPPORTUNITY_CATEGORIES[key];
       await pool.query(
-        "INSERT INTO opportunities (user_id, title, company, city, pitch_message, status) VALUES ($1, $2, $3, $4, $5, 'new')",
+        "INSERT INTO opportunities (user_id, title, company, city, pitch_message, price_hint, status) VALUES ($1, $2, $3, $4, $5, $6, 'new')",
         [
           userId,
           `${category.label} costumam precisar desse tipo de serviço.`,
           category.label,
           "Poucos dados de mapa pra sua região ainda",
-          plan.template.replace(/\{negocio\}/gi, category.label)
+          plan.template.replace(/\{negocio\}/gi, category.label),
+          plan.priceHint
         ]
       );
     }
   } else {
     for (const item of results) {
       await pool.query(
-        "INSERT INTO opportunities (user_id, title, company, city, pitch_message, address, phone, status) VALUES ($1, $2, $3, $4, $5, $6, $7, 'new')",
+        `INSERT INTO opportunities (user_id, title, company, city, pitch_message, address, phone, website, opening_hours, price_hint, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'new')`,
         [
           userId,
           item.name,
@@ -789,7 +801,10 @@ async function generateOpportunities(userId: string, cityInput?: string, skillIn
           formatDistance(item.distanceMeters),
           plan.template.replace(/\{negocio\}/gi, item.name),
           item.address,
-          item.phone
+          item.phone,
+          item.website,
+          item.openingHours,
+          plan.priceHint
         ]
       );
     }
@@ -826,6 +841,7 @@ async function geocodeCity(city: string): Promise<{ lat: number; lon: number } |
 type OutreachPlan = {
   categories: OpportunityCategoryKey[];
   template: string;
+  priceHint: string;
 };
 
 function defaultOutreachTemplate(skills: string): string {
@@ -847,7 +863,8 @@ async function planOutreach(skills: string, preferredChannel: string | null): Pr
       "Evite frases vagas como 'posso ajudar' ou 'bora conversar' sozinhas — seja específico sobre o que você entrega. " +
       "Termine com uma pergunta objetiva que facilite o negócio responder (ex: perguntar sobre um horário, ou propor enviar um orçamento/portfólio).",
     "A mensagem PRECISA conter o texto literal {negocio} no lugar do nome do negócio, pra ser substituído depois.",
-    'Responda estritamente em JSON, sem markdown, no formato exato: {"categories": ["chave1","chave2"], "template": "mensagem com {negocio}"}. Use somente chaves da lista em categories.'
+    "Tarefa 3: dar uma faixa de preço realista em reais (BR) pra esse tipo de serviço avulso ou mensal, curta, ex: 'R$ 80–200 por visita' ou 'R$ 300–600 por mês'.",
+    'Responda estritamente em JSON, sem markdown, no formato exato: {"categories": ["chave1","chave2"], "template": "mensagem com {negocio}", "priceHint": "R$ X–Y ..."}. Use somente chaves da lista em categories.'
   ].join("\n");
 
   try {
@@ -856,21 +873,22 @@ async function planOutreach(skills: string, preferredChannel: string | null): Pr
     const parsed: unknown = JSON.parse(cleaned);
 
     if (parsed && typeof parsed === "object") {
-      const record = parsed as { categories?: unknown; template?: unknown };
+      const record = parsed as { categories?: unknown; template?: unknown; priceHint?: unknown };
       const categories = Array.isArray(record.categories)
         ? record.categories.filter((item): item is OpportunityCategoryKey => keys.includes(item as OpportunityCategoryKey))
         : [];
       const template = typeof record.template === "string" && record.template.includes("{negocio}") ? record.template : null;
+      const priceHint = typeof record.priceHint === "string" && record.priceHint.trim().length > 0 ? record.priceHint : "Valor a combinar";
 
       if (categories.length > 0 && template) {
-        return { categories: categories.slice(0, 5), template };
+        return { categories: categories.slice(0, 5), template, priceHint };
       }
     }
   } catch {
     // Falls through to the default plan below.
   }
 
-  return { categories: DEFAULT_OPPORTUNITY_CATEGORIES, template: defaultOutreachTemplate(skills) };
+  return { categories: DEFAULT_OPPORTUNITY_CATEGORIES, template: defaultOutreachTemplate(skills), priceHint: "Valor a combinar" };
 }
 
 function buildCategoryQuery(lat: number, lon: number, key: OpportunityCategoryKey): string {
@@ -891,6 +909,8 @@ type OverpassResult = {
   distanceMeters: number;
   address: string | null;
   phone: string | null;
+  website: string | null;
+  openingHours: string | null;
 };
 
 function extractAddress(tags: Record<string, string>): string | null {
@@ -906,6 +926,14 @@ function extractAddress(tags: Record<string, string>): string | null {
 
 function extractPhone(tags: Record<string, string>): string | null {
   return tags.phone ?? tags["contact:phone"] ?? null;
+}
+
+function extractWebsite(tags: Record<string, string>): string | null {
+  return tags.website ?? tags["contact:website"] ?? null;
+}
+
+function extractOpeningHours(tags: Record<string, string>): string | null {
+  return tags.opening_hours ?? null;
 }
 
 async function queryOverpassForCategory(lat: number, lon: number, key: OpportunityCategoryKey): Promise<OverpassResult[]> {
@@ -961,7 +989,9 @@ async function queryOverpassForCategory(lat: number, lon: number, key: Opportuni
           categoryLabel,
           distanceMeters: haversineMeters(lat, lon, elementLat, elementLon),
           address: extractAddress(record.tags ?? {}),
-          phone: extractPhone(record.tags ?? {})
+          phone: extractPhone(record.tags ?? {}),
+          website: extractWebsite(record.tags ?? {}),
+          openingHours: extractOpeningHours(record.tags ?? {})
         };
       })
       .filter((item): item is OverpassResult => item !== null);

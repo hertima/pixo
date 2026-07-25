@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import * as Clipboard from "expo-clipboard";
-import { Copy, MapPin, Phone, Radar as RadarIcon } from "lucide-react-native";
+import { Clock, Copy, Globe, MapPin, Phone, Radar as RadarIcon, Wallet } from "lucide-react-native";
 
 import { AppScreen, ScreenSection } from "../../components/AppScreen";
 import { BackHeader } from "../../components/BackHeader";
@@ -54,6 +54,13 @@ export default function RadarScreen() {
         style={styles.skillInput}
       />
 
+      {opportunities.length > 0 && opportunities[0]?.priceHint ? (
+        <View style={styles.priceBanner}>
+          <Wallet color={colors.primary} size={16} />
+          <Text style={styles.priceBannerText}>Faixa de preço estimada: {opportunities[0].priceHint}</Text>
+        </View>
+      ) : null}
+
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator color={colors.primary} />
@@ -83,6 +90,18 @@ export default function RadarScreen() {
                 <View style={styles.phoneRow}>
                   <Phone color={colors.textMuted} size={12} />
                   <Text style={styles.city}>{opportunity.phone}</Text>
+                </View>
+              ) : null}
+              {opportunity.openingHours ? (
+                <View style={styles.phoneRow}>
+                  <Clock color={colors.textMuted} size={12} />
+                  <Text style={styles.city}>{opportunity.openingHours}</Text>
+                </View>
+              ) : null}
+              {opportunity.website ? (
+                <View style={styles.phoneRow}>
+                  <Globe color={colors.textMuted} size={12} />
+                  <Text style={styles.city}>{opportunity.website}</Text>
                 </View>
               ) : null}
               {opportunity.pitchMessage ? (
@@ -146,6 +165,22 @@ const styles = StyleSheet.create({
     fontSize: typography.small,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm
+  },
+  priceBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.borderStrong,
+    borderRadius: radii.md,
+    backgroundColor: colors.surfaceRaised,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm
+  },
+  priceBannerText: {
+    color: colors.text,
+    fontSize: typography.small,
+    fontWeight: "800"
   },
   list: {
     gap: spacing.sm
