@@ -90,6 +90,7 @@ export default function AppLayout() {
       <Tabs.Screen name="edit-profile" options={{ href: null }} />
       <Tabs.Screen name="plan" options={{ href: null }} />
       <Tabs.Screen name="checkin" options={{ href: null }} />
+      <Tabs.Screen name="savings" options={{ href: null }} />
     </Tabs>
   );
 }

@@ -161,6 +161,11 @@ export type CheckinResponse = {
   suggestion: string;
 };
 
+export type SavingsResponse = {
+  targetAmount: number | null;
+  currentAmount: number;
+};
+
 type ApiRequestOptions = {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;

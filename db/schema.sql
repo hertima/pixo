@@ -36,8 +36,11 @@ CREATE TABLE IF NOT EXISTS goals (
   current_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
   due_date DATE,
   status TEXT NOT NULL DEFAULT 'active',
+  kind TEXT NOT NULL DEFAULT 'income',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE goals ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'income';
 
 CREATE TABLE IF NOT EXISTS missions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

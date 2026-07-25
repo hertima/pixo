@@ -13,7 +13,7 @@ import {
   LogOut,
   Moon,
   Pencil,
-  Radar,
+  PiggyBank,
   Shield,
   Sparkles,
   User
@@ -74,6 +74,7 @@ export default function ProfileScreen() {
         <MenuItem icon={Award} label="Conquistas" onPress={() => router.push("/achievements")} />
         <MenuItem icon={ListChecks} label="Plano de Ação" onPress={() => router.push("/plan")} />
         <MenuItem icon={Clock} label="Check-in de Tempo" onPress={() => router.push("/checkin")} />
+        <MenuItem icon={PiggyBank} label="Caixinha de Economia" onPress={() => router.push("/savings")} />
         <MenuItem icon={Calculator} label="Simulador de Ganhos" onPress={() => router.push("/simulator")} />
         <MenuItem icon={Bot} label="PIXO IA" onPress={() => router.push("/ai")} />
         <View style={styles.menuRow}>

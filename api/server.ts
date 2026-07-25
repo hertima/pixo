@@ -575,6 +575,78 @@ app.post("/api/checkin", requireAuth, async (request, response, next) => {
   }
 });
 
+app.get("/api/savings", requireAuth, async (request, response, next) => {
+  try {
+    const userId = (request as AuthedRequest).userId;
+    const goal = await getActiveGoal(userId, "savings");
+    response.json({
+      targetAmount: goal ? Number(goal.target_amount) : null,
+      currentAmount: goal ? Number(goal.current_amount) : 0
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/savings/goal", requireAuth, async (request, response, next) => {
+  try {
+    const userId = (request as AuthedRequest).userId;
+    const body = readBody(request);
+    const targetAmount = typeof body.targetAmount === "number" && body.targetAmount > 0 ? body.targetAmount : null;
+
+    if (!targetAmount) {
+      throw new HttpError(400, "Informe uma meta de economia válida.");
+    }
+
+    const existing = await getActiveGoal(userId, "savings");
+
+    if (existing) {
+      await pool.query("UPDATE goals SET target_amount = $2 WHERE id = $1", [existing.id, targetAmount]);
+    } else {
+      await pool.query("INSERT INTO goals (user_id, name, target_amount, kind) VALUES ($1, 'Caixinha', $2, 'savings')", [
+        userId,
+        targetAmount
+      ]);
+    }
+
+    const goal = await getActiveGoal(userId, "savings");
+    response.json({
+      targetAmount: goal ? Number(goal.target_amount) : null,
+      currentAmount: goal ? Number(goal.current_amount) : 0
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/savings/deposit", requireAuth, async (request, response, next) => {
+  try {
+    const userId = (request as AuthedRequest).userId;
+    const body = readBody(request);
+    const amount = typeof body.amount === "number" && body.amount > 0 ? body.amount : null;
+
+    if (!amount) {
+      throw new HttpError(400, "Informe um valor válido.");
+    }
+
+    const existing = await getActiveGoal(userId, "savings");
+
+    if (!existing) {
+      throw new HttpError(400, "Defina uma meta de economia antes de guardar um valor.");
+    }
+
+    await pool.query("UPDATE goals SET current_amount = current_amount + $2 WHERE id = $1", [existing.id, amount]);
+
+    const goal = await getActiveGoal(userId, "savings");
+    response.json({
+      targetAmount: goal ? Number(goal.target_amount) : null,
+      currentAmount: goal ? Number(goal.current_amount) : 0
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.use(express.static(path.resolve(process.cwd(), "dist")));
 app.get("*", async (request, response, next) => {
   if (request.path.startsWith("/api/")) {
@@ -634,10 +706,10 @@ async function getProfile(userId: string): Promise<ProfileRow | null> {
   return result.rows[0] ?? null;
 }
 
-async function getActiveGoal(userId: string): Promise<GoalRow | null> {
+async function getActiveGoal(userId: string, kind: "income" | "savings" = "income"): Promise<GoalRow | null> {
   const result = await pool.query<GoalRow>(
-    "SELECT id, name, target_amount, current_amount, due_date FROM goals WHERE user_id = $1 AND status = 'active' ORDER BY created_at DESC LIMIT 1",
-    [userId]
+    "SELECT id, name, target_amount, current_amount, due_date FROM goals WHERE user_id = $1 AND status = 'active' AND kind = $2 ORDER BY created_at DESC LIMIT 1",
+    [userId, kind]
   );
   return result.rows[0] ?? null;
 }
@@ -1218,7 +1290,18 @@ async function queryOverpassForCategory(lat: number, lon: number, key: Opportuni
 }
 
 async function queryOverpass(lat: number, lon: number, categories: OpportunityCategoryKey[]): Promise<OverpassResult[]> {
-  const perCategory = await Promise.all(categories.map((key) => queryOverpassForCategory(lat, lon, key)));
+  // The public Overpass instance caps concurrent requests per client (~2), so
+  // firing every category in parallel makes some silently fail. Run with a
+  // small concurrency limit instead.
+  const concurrency = 2;
+  const perCategory: OverpassResult[][] = [];
+
+  for (let i = 0; i < categories.length; i += concurrency) {
+    const batch = categories.slice(i, i + concurrency);
+    const batchResults = await Promise.all(batch.map((key) => queryOverpassForCategory(lat, lon, key)));
+    perCategory.push(...batchResults);
+  }
+
   const results = perCategory.flat().sort((a, b) => a.distanceMeters - b.distanceMeters);
 
   const seen = new Set<string>();
