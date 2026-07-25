@@ -682,6 +682,7 @@ function serializeOpportunity(opportunity: OpportunityRow): {
 
 type OpportunityCategoryKey =
   | "pet"
+  | "veterinary"
   | "beauty"
   | "food"
   | "fitness"
@@ -692,10 +693,16 @@ type OpportunityCategoryKey =
   | "auto"
   | "bakery"
   | "hotel"
-  | "school";
+  | "school"
+  | "pool"
+  | "sportsclub"
+  | "laundry"
+  | "eventvenue"
+  | "condo";
 
 const OPPORTUNITY_CATEGORIES: Record<OpportunityCategoryKey, { label: string; filters: string[] }> = {
   pet: { label: "Pet shops", filters: ["shop=pet"] },
+  veterinary: { label: "Clínicas veterinárias", filters: ["amenity=veterinary"] },
   beauty: { label: "Salões de beleza e barbearias", filters: ["shop=hairdresser", "shop=beauty"] },
   food: { label: "Restaurantes e cafés", filters: ["amenity=restaurant", "amenity=cafe", "amenity=fast_food"] },
   fitness: { label: "Academias", filters: ["leisure=fitness_centre"] },
@@ -706,7 +713,12 @@ const OPPORTUNITY_CATEGORIES: Record<OpportunityCategoryKey, { label: string; fi
   auto: { label: "Oficinas e autopeças", filters: ["shop=car_repair"] },
   bakery: { label: "Padarias e confeitarias", filters: ["shop=bakery"] },
   hotel: { label: "Pousadas e hotéis", filters: ["tourism=hotel", "tourism=guest_house"] },
-  school: { label: "Escolas e cursos", filters: ["amenity=school", "amenity=driving_school"] }
+  school: { label: "Escolas e cursos", filters: ["amenity=school", "amenity=driving_school"] },
+  pool: { label: "Locais com piscina (hotéis, clubes, condomínios)", filters: ["leisure=swimming_pool"] },
+  sportsclub: { label: "Clubes e centros esportivos", filters: ["leisure=sports_centre", "leisure=golf_course"] },
+  laundry: { label: "Lavanderias", filters: ["shop=laundry", "shop=dry_cleaning"] },
+  eventvenue: { label: "Espaços de eventos e salões de festa", filters: ["amenity=events_venue", "amenity=community_centre"] },
+  condo: { label: "Condomínios residenciais", filters: ["building=apartments"] }
 };
 
 const DEFAULT_OPPORTUNITY_CATEGORIES: OpportunityCategoryKey[] = ["food", "beauty", "retail", "office"];
@@ -827,6 +839,7 @@ async function planOutreach(skills: string, preferredChannel: string | null): Pr
     "Você é o motor do Radar de Oportunidades do PIXO, um app de renda extra.",
     "Tarefa 1: escolher quais tipos de negócio local costumam precisar do serviço que o usuário oferece.",
     `Escolha entre 3 e 5 categorias desta lista fixa: ${keys.join(", ")}.`,
+    "Seja literal e específico: prefira a categoria mais diretamente ligada à necessidade real (ex: limpeza de piscina → pool, não school; passear com cães → veterinary/pet, não retail).",
     `Tarefa 2: escrever UMA mensagem de primeiro contato (estilo ${channelLabel}) que o usuário possa copiar e colar pra abordar qualquer um desses negócios.`,
     "A mensagem tem que soar como um profissional de verdade se apresentando, não um script genérico e raso.",
     "Regras da mensagem: 3 a 5 frases. Comece se apresentando pelo nome do serviço/ofício (ex: 'Sou churrasqueiro especializado em eventos'). " +
