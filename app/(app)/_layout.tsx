@@ -1,5 +1,6 @@
 import type { ColorValue } from "react-native";
 import { StyleSheet, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Redirect, Tabs } from "expo-router";
 import { BarChart3, Bot, Home, Radar, Target, User } from "lucide-react-native";
 
@@ -16,6 +17,8 @@ function iconColor(color: ColorValue): string {
 
 export default function AppLayout() {
   const { loading, session } = useSession();
+  const insets = useSafeAreaInsets();
+  const bottomInset = Math.max(insets.bottom, 8);
 
   if (!loading && !session) {
     return <Redirect href="/auth" />;
@@ -31,9 +34,9 @@ export default function AppLayout() {
         tabBarStyle: {
           backgroundColor: colors.surface,
           borderTopColor: colors.border,
-          height: 68,
+          height: 58 + bottomInset,
           paddingTop: 8,
-          paddingBottom: 10,
+          paddingBottom: bottomInset,
           flexShrink: 0
         },
         tabBarItemStyle: {
