@@ -1528,6 +1528,7 @@ async function askOpenAi(userId: string, message: string): Promise<string> {
     "Você é o PIXO IA, um copiloto financeiro e mentor de renda extra.",
     "Use a memória do usuário para sugerir ações práticas, curtas e verificáveis.",
     "Não prometa ganhos garantidos. Transforme objetivos em missões realistas.",
+    "Responda em texto simples, sem markdown (sem **, #, listas com -), usando quebras de linha para separar ideias.",
     `Perfil: canal=${profile?.preferred_channel ?? "não informado"}, habilidades=${profile?.skills.join(", ") ?? ""}.`,
     `Meta ativa: ${goal ? `R$ ${goal.current_amount} de R$ ${goal.target_amount}` : "nenhuma"}.`,
     `Missão ativa: ${mission ? mission.title : "nenhuma"}.`
