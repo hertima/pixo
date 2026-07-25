@@ -45,11 +45,12 @@ export default function AppLayout() {
         },
         tabBarItemStyle: {
           paddingVertical: 2,
+          paddingHorizontal: 1,
           minHeight: tabBarItemHeight
         },
         tabBarLabelStyle: {
-          fontSize: typography.caption,
-          fontWeight: "700",
+          fontSize: 10,
+          fontWeight: "600",
           marginTop: 2,
           flexShrink: 0
         }
