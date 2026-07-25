@@ -29,11 +29,18 @@ export default function AppLayout() {
         tabBarInactiveTintColor: colors.textMuted,
         tabBarStyle: {
           backgroundColor: colors.surface,
-          borderTopColor: colors.border
+          borderTopColor: colors.border,
+          height: 68,
+          paddingTop: 8,
+          paddingBottom: 10
+        },
+        tabBarItemStyle: {
+          paddingVertical: 2
         },
         tabBarLabelStyle: {
           fontSize: typography.caption,
-          fontWeight: "700"
+          fontWeight: "700",
+          marginTop: 2
         }
       }}
     >
@@ -97,12 +104,11 @@ export default function AppLayout() {
 
 const styles = StyleSheet.create({
   fab: {
-    width: 46,
-    height: 46,
+    width: 40,
+    height: 40,
     borderRadius: radii.pill,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.primary,
-    marginBottom: 16
+    backgroundColor: colors.primary
   }
 });

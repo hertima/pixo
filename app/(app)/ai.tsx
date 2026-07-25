@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { useLocalSearchParams } from "expo-router";
 import { Bot, Send } from "lucide-react-native";
 
 import { AppScreen, ScreenSection } from "../../components/AppScreen";
@@ -11,11 +12,13 @@ import { colors, radii, shadows, spacing, typography } from "../../theme/tokens"
 const QUICK_REPLIES = ["Não sei o que vender", "Tenho 2 horas por dia", "Sou tímido", "Tenho um notebook"];
 
 export default function AiScreen() {
+  const { prompt } = useLocalSearchParams<{ prompt?: string }>();
   const [messages, setMessages] = useState<MentorMessage[]>([]);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const autoSentPrompt = useRef<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -25,6 +28,11 @@ export default function AiScreen() {
         if (mounted) {
           setMessages(response.messages);
           setLoading(false);
+
+          if (prompt && autoSentPrompt.current !== prompt) {
+            autoSentPrompt.current = prompt;
+            void sendMessage(prompt);
+          }
         }
       })
       .catch((requestError) => {
@@ -37,7 +45,8 @@ export default function AiScreen() {
     return () => {
       mounted = false;
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prompt]);
 
   async function sendMessage(override?: string) {
     const content = (override ?? text).trim();

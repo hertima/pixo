@@ -1,5 +1,6 @@
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
-import { CheckCircle2, Circle, ListChecks } from "lucide-react-native";
+import { router } from "expo-router";
+import { Bot, CheckCircle2, Circle, ListChecks } from "lucide-react-native";
 
 import { AppScreen, ScreenSection } from "../../components/AppScreen";
 import { BackHeader } from "../../components/BackHeader";
@@ -45,13 +46,28 @@ export default function PlanScreen() {
       ) : (
         <View style={styles.card}>
           {steps.map((step) => (
-            <Pressable key={step.id} style={styles.stepRow} onPress={() => toggleStep(step.id)}>
-              {step.done ? <CheckCircle2 color={colors.primary} size={20} /> : <Circle color={colors.textMuted} size={20} />}
-              <View style={styles.stepText}>
-                <Text style={[styles.stepTitle, step.done && styles.stepDone]}>{step.title}</Text>
-                <Text style={styles.stepDescription}>{step.description}</Text>
-              </View>
-            </Pressable>
+            <View key={step.id} style={styles.stepRow}>
+              <Pressable style={styles.stepMain} onPress={() => toggleStep(step.id)}>
+                {step.done ? <CheckCircle2 color={colors.primary} size={20} /> : <Circle color={colors.textMuted} size={20} />}
+                <View style={styles.stepText}>
+                  <Text style={[styles.stepTitle, step.done && styles.stepDone]}>{step.title}</Text>
+                  <Text style={styles.stepDescription}>{step.description}</Text>
+                </View>
+              </Pressable>
+              <Pressable
+                style={styles.helpButton}
+                onPress={() =>
+                  router.push({
+                    pathname: "/ai",
+                    params: {
+                      prompt: `Me ajuda com este passo: "${step.title.replace(/^Dia \d+: /, "")}". ${step.description}`
+                    }
+                  })
+                }
+              >
+                <Bot color={colors.primary} size={16} />
+              </Pressable>
+            </View>
           ))}
         </View>
       )}
@@ -94,6 +110,15 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-start",
     gap: spacing.sm
+  },
+  stepMain: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: spacing.sm
+  },
+  helpButton: {
+    padding: spacing.xxs
   },
   stepText: {
     flex: 1,

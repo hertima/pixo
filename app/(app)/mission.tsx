@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import * as Clipboard from "expo-clipboard";
-import { CheckCircle2, Circle, ListChecks, Target } from "lucide-react-native";
+import { Bot, CheckCircle2, Circle, ListChecks, Target } from "lucide-react-native";
 
 import { AppScreen, ScreenSection } from "../../components/AppScreen";
 import { EmptyState } from "../../components/EmptyState";
@@ -251,6 +251,18 @@ function PlanStepCard({ step, onToggle }: PlanStepCardProps) {
           <Text style={planStepStyles.link}>Ver plano completo</Text>
         </Pressable>
       </View>
+      <Pressable
+        style={planStepStyles.helpButton}
+        onPress={() =>
+          router.push({
+            pathname: "/ai",
+            params: { prompt: `Me ajuda com o passo de hoje: "${step.title.replace(/^Dia \d+: /, "")}". ${step.description}` }
+          })
+        }
+      >
+        <Bot color={colors.primary} size={14} />
+        <Text style={planStepStyles.link}>Pedir ajuda ao PIXO</Text>
+      </Pressable>
     </Pressable>
   );
 }
@@ -299,6 +311,12 @@ const planStepStyles = StyleSheet.create({
     color: colors.primary,
     fontSize: typography.caption,
     fontWeight: "800"
+  },
+  helpButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xxs,
+    marginTop: spacing.xs
   }
 });
 

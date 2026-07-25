@@ -43,7 +43,9 @@ export default function HomeScreen() {
         <>
           <View style={styles.header}>
             <Text style={styles.greeting}>Olá, {displayName}! 👋</Text>
-            <Bell color={colors.textMuted} size={20} />
+            <Pressable accessibilityRole="button" onPress={() => router.push("/profile")}>
+              <Bell color={colors.textMuted} size={20} />
+            </Pressable>
           </View>
 
           <View style={[styles.card, styles.cardAccentGold]}>
