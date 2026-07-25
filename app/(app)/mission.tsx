@@ -55,6 +55,20 @@ export default function MissionScreen() {
           <Text style={styles.body}>{todayPlanStep.description}</Text>
         </View>
         <PrimaryButton title="MARCAR COMO FEITO" onPress={() => togglePlanStep(todayPlanStep.id)} />
+        <Pressable
+          style={planStepStyles.helpButton}
+          onPress={() =>
+            router.push({
+              pathname: "/ai",
+              params: {
+                prompt: `Me ajuda com o passo de hoje: "${todayPlanStep.title.replace(/^Dia \d+: /, "")}". ${todayPlanStep.description}`
+              }
+            })
+          }
+        >
+          <Bot color={colors.primary} size={14} />
+          <Text style={planStepStyles.link}>Pedir ajuda ao PIXO</Text>
+        </Pressable>
         <Pressable onPress={() => router.push("/plan")}>
           <Text style={planStepStyles.link}>Ver plano completo de 21 dias</Text>
         </Pressable>
