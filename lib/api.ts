@@ -159,6 +159,7 @@ export type PlanResponse = {
 
 export type CheckinResponse = {
   suggestion: string;
+  message: string | null;
 };
 
 export type SavingsResponse = {

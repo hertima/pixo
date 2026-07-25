@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
-import { Clock } from "lucide-react-native";
+import * as Clipboard from "expo-clipboard";
+import { Clock, Copy } from "lucide-react-native";
 
 import { AppScreen, ScreenSection } from "../../components/AppScreen";
 import { BackHeader } from "../../components/BackHeader";
@@ -17,25 +18,37 @@ const TIME_OPTIONS = [
 
 export default function CheckinScreen() {
   const [loadingMinutes, setLoadingMinutes] = useState<number | null>(null);
-  const [suggestion, setSuggestion] = useState<string | null>(null);
+  const [result, setResult] = useState<CheckinResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   async function checkin(minutes: number) {
     setLoadingMinutes(minutes);
     setError(null);
-    setSuggestion(null);
+    setResult(null);
+    setCopied(false);
 
     try {
       const response = await apiRequest<CheckinResponse>("/api/checkin", {
         method: "POST",
         body: { minutes }
       });
-      setSuggestion(response.suggestion);
+      setResult(response);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Não foi possível gerar uma sugestão.");
     } finally {
       setLoadingMinutes(null);
     }
+  }
+
+  async function copyMessage() {
+    if (!result?.message) {
+      return;
+    }
+
+    await Clipboard.setStringAsync(result.message);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   }
 
   return (
@@ -69,10 +82,22 @@ export default function CheckinScreen() {
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
-      {suggestion ? (
+      {result ? (
         <View style={styles.suggestionCard}>
           <Text style={styles.suggestionLabel}>PIXO sugere</Text>
-          <Text style={styles.suggestionText}>{suggestion}</Text>
+          <Text style={styles.suggestionText}>{result.suggestion}</Text>
+
+          {result.message ? (
+            <>
+              <View style={styles.divider} />
+              <Text style={styles.suggestionLabel}>Mensagem pronta</Text>
+              <Text style={styles.suggestionText}>{result.message}</Text>
+              <Pressable style={styles.copyButton} onPress={copyMessage}>
+                <Copy color={colors.primary} size={14} />
+                <Text style={styles.copyLabel}>{copied ? "Mensagem copiada" : "Copiar mensagem"}</Text>
+              </Pressable>
+            </>
+          ) : null}
         </View>
       ) : null}
     </AppScreen>
@@ -129,5 +154,27 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: typography.body,
     lineHeight: spacing.lg
+  },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.border,
+    marginVertical: spacing.xs
+  },
+  copyButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: spacing.xxs,
+    marginTop: spacing.xs,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.borderStrong,
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xxs
+  },
+  copyLabel: {
+    color: colors.primary,
+    fontSize: typography.caption,
+    fontWeight: "800"
   }
 });

@@ -189,11 +189,13 @@ export default function MissionScreen() {
         <EmptyState icon={CheckCircle2} title="Missão concluída" body="Você já ganhou a recompensa dessa missão." />
       ) : (
         <>
-          <PrimaryButton
-            title={copied ? "MENSAGEM COPIADA" : "COPIAR MENSAGEM"}
-            variant="secondary"
-            onPress={copyMessage}
-          />
+          {steps.length > 0 ? (
+            <PrimaryButton
+              title={copied ? "MENSAGEM COPIADA" : "COPIAR MENSAGEM"}
+              variant="secondary"
+              onPress={copyMessage}
+            />
+          ) : null}
           <PrimaryButton
             title="MARCAR COMO CONCLUÍDA"
             onPress={completeMission}

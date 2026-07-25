@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput } from "react-native";
+import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput } from "react-native";
 import { router } from "expo-router";
 import { LogIn } from "lucide-react-native";
 
@@ -90,6 +90,9 @@ export default function AuthScreen() {
           />
           {error ? <Text style={styles.error}>{error}</Text> : null}
           <PrimaryButton title="ENTRAR" icon={LogIn} loading={loading} onPress={signInOrSignUp} />
+          <Pressable onPress={() => router.push("/forgot-password")}>
+            <Text style={styles.forgotLink}>Esqueci minha senha</Text>
+          </Pressable>
         </ScreenSection>
       </KeyboardAvoidingView>
     </AppScreen>
@@ -129,5 +132,11 @@ const styles = StyleSheet.create({
   error: {
     color: colors.danger,
     fontSize: typography.small
+  },
+  forgotLink: {
+    color: colors.primary,
+    fontSize: typography.small,
+    fontWeight: "700",
+    textAlign: "center"
   }
 });

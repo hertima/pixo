@@ -6,6 +6,7 @@ import express, { type NextFunction, type Request, type Response } from "express
 import fs from "node:fs/promises";
 import path from "node:path";
 import jwt, { type JwtPayload } from "jsonwebtoken";
+import nodemailer from "nodemailer";
 import pg from "pg";
 
 import { ACHIEVEMENTS, LEVELS, getLevelProgress, unlockedAchievementKeys, type AchievementStats } from "./gamification";
@@ -177,6 +178,71 @@ app.post("/api/auth/login", async (request, response, next) => {
     if (!passwordMatches) {
       throw new HttpError(401, "Senha inválida.");
     }
+
+    response.json(createSession(user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/auth/forgot-password", async (request, response, next) => {
+  try {
+    const body = readBody(request);
+    const email = readEmail(body.email);
+    const result = await pool.query<UserRow>(
+      "SELECT id, email, password_hash FROM users WHERE lower(email) = lower($1) LIMIT 1",
+      [email]
+    );
+    const user = result.rows[0];
+
+    if (user) {
+      const code = String(Math.floor(100000 + Math.random() * 900000));
+      const codeHash = await bcrypt.hash(code, 10);
+
+      await pool.query("DELETE FROM password_resets WHERE user_id = $1 AND used = false", [user.id]);
+      await pool.query(
+        "INSERT INTO password_resets (user_id, code_hash, expires_at) VALUES ($1, $2, now() + interval '15 minutes')",
+        [user.id, codeHash]
+      );
+      await sendResetCodeEmail(user.email, code);
+    }
+
+    response.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/auth/reset-password", async (request, response, next) => {
+  try {
+    const body = readBody(request);
+    const email = readEmail(body.email);
+    const code = readNonEmptyString(body.code, "Código");
+    const newPassword = readPassword(body.newPassword);
+
+    const userResult = await pool.query<UserRow>(
+      "SELECT id, email, password_hash FROM users WHERE lower(email) = lower($1) LIMIT 1",
+      [email]
+    );
+    const user = userResult.rows[0];
+
+    if (!user) {
+      throw new HttpError(400, "Código inválido ou expirado.");
+    }
+
+    const resetResult = await pool.query<{ id: string; code_hash: string }>(
+      "SELECT id, code_hash FROM password_resets WHERE user_id = $1 AND used = false AND expires_at > now() ORDER BY created_at DESC LIMIT 1",
+      [user.id]
+    );
+    const reset = resetResult.rows[0];
+
+    if (!reset || !(await bcrypt.compare(code, reset.code_hash))) {
+      throw new HttpError(400, "Código inválido ou expirado.");
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    await pool.query("UPDATE users SET password_hash = $2 WHERE id = $1", [user.id, passwordHash]);
+    await pool.query("UPDATE password_resets SET used = true WHERE id = $1", [reset.id]);
 
     response.json(createSession(user));
   } catch (error) {
@@ -568,8 +634,8 @@ app.post("/api/checkin", requireAuth, async (request, response, next) => {
       throw new HttpError(400, "Informe quantos minutos livres você tem.");
     }
 
-    const suggestion = await generateTimeCheckinSuggestion(userId, minutes);
-    response.json({ suggestion });
+    const result = await generateTimeCheckinSuggestion(userId, minutes);
+    response.json(result);
   } catch (error) {
     next(error);
   }
@@ -866,6 +932,7 @@ async function generatePlan(userId: string): Promise<PlanStepRow[]> {
     "Monte um protocolo de 21 dias: exatamente 21 passos, um pra cada dia, em ordem crescente de dificuldade (dia 1 é o mais simples pra começar hoje mesmo).",
     "IMPORTANTE: isso não é um curso de preparação. Desde o Dia 1, cada passo tem que aproximar a pessoa de ganhar dinheiro de verdade — abordar gente real, oferecer o serviço, tentar vender — nunca um dia inteiro só de estudo, planejamento ou pesquisa sem contato com cliente.",
     "Cada passo precisa ser específico e verificável (não genérico tipo 'se organizar'). Adapte ao tempo livre e à habilidade da pessoa.",
+    "Se algum passo envolver aprender algo, NUNCA diga só 'estude o básico de X' — diga exatamente onde e como (ex: 'Pesquise no YouTube por \"Canva básico iniciante\" e assista 1 vídeo curto, depois crie um design de teste'). A pessoa tem que saber exatamente o que abrir e o que fazer, sem precisar adivinhar.",
     "O título de cada passo tem que começar com 'Dia N: ' (N de 1 a 21), seguido da ação curta. Ex: 'Dia 1: Definir sua oferta'.",
     'Responda estritamente em JSON, sem markdown: um array com exatamente 21 objetos {"title": "Dia N: ação curta", "description": "1-2 frases explicando o que fazer nesse dia"}.'
   ].join("\n");
@@ -950,7 +1017,12 @@ function buildDefaultTwentyOneDayPlan(): { title: string; description: string }[
   }));
 }
 
-async function generateTimeCheckinSuggestion(userId: string, minutes: number): Promise<string> {
+type CheckinSuggestion = {
+  suggestion: string;
+  message: string | null;
+};
+
+async function generateTimeCheckinSuggestion(userId: string, minutes: number): Promise<CheckinSuggestion> {
   const profile = await getProfile(userId);
   const mission = await getTodaysMission(userId);
   const skills = profile?.skills.length ? profile.skills.join(", ") : "renda extra em geral";
@@ -960,8 +1032,8 @@ async function generateTimeCheckinSuggestion(userId: string, minutes: number): P
     "PRIORIDADE: prefira sempre uma ação que aproxima de ganhar dinheiro de verdade (contatar gente real, oferecer o serviço, fechar ou cobrar um cliente, pedir indicação). " +
       "NUNCA sugira só 'praticar', 'estudar' ou 'testar uma técnica' — isso não gera renda. Só sugira aprendizado se o tempo for curto DEMAIS pra qualquer contato (ex: menos de 10 min) e mesmo assim ligue a algo que prepara pra vender mais rápido.",
     "Seja concreto: diga o número de pessoas, a ação exata (mandar mensagem, ligar, postar, cobrar), não algo vago.",
-    "Resposta curta: 2-3 frases, direta, sem enrolação, em tom de mentor motivador.",
-    "Não use markdown nem listas, só texto corrido."
+    "Se a ação envolver mandar mensagem pra alguém, ESCREVA a mensagem pronta pra copiar e colar (natural, não robótica). Se não envolver mensagem (ex: ligar, postar, organizar algo físico), deixe null.",
+    'Responda estritamente em JSON, sem markdown, no formato: {"suggestion": "2-3 frases dizendo o que fazer, tom de mentor motivador", "message": "mensagem pronta ou null"}.'
   ].join("\n");
   const input = [
     `Tempo livre agora: ${minutes} minutos.`,
@@ -969,7 +1041,27 @@ async function generateTimeCheckinSuggestion(userId: string, minutes: number): P
     `Missão ativa: ${mission ? mission.title : "nenhuma"}.`
   ].join(" ");
 
-  return callOpenAi(instructions, input);
+  const raw = await callOpenAi(instructions, input);
+
+  try {
+    const cleaned = raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+    const parsed: unknown = JSON.parse(cleaned);
+
+    if (parsed && typeof parsed === "object") {
+      const record = parsed as { suggestion?: unknown; message?: unknown };
+
+      if (typeof record.suggestion === "string" && record.suggestion.trim().length > 0) {
+        return {
+          suggestion: record.suggestion,
+          message: typeof record.message === "string" && record.message.trim().length > 0 ? record.message : null
+        };
+      }
+    }
+  } catch {
+    // Falls through to the raw-text fallback below.
+  }
+
+  return { suggestion: raw, message: null };
 }
 
 type OpportunityCategoryKey =
@@ -1442,6 +1534,44 @@ async function askOpenAi(userId: string, message: string): Promise<string> {
   ].join("\n");
 
   return callOpenAi(instructions, message);
+}
+
+let mailTransporter: ReturnType<typeof nodemailer.createTransport> | null = null;
+
+function getMailTransporter(): ReturnType<typeof nodemailer.createTransport> {
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    throw new HttpError(503, "Envio de email não configurado no servidor.");
+  }
+
+  if (!mailTransporter) {
+    mailTransporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS
+      }
+    });
+  }
+
+  return mailTransporter;
+}
+
+async function sendResetCodeEmail(to: string, code: string): Promise<void> {
+  const transporter = getMailTransporter();
+
+  await transporter.sendMail({
+    from: `"PIXO" <${process.env.SMTP_USER}>`,
+    to,
+    subject: "Seu código de verificação PIXO",
+    text: `Seu código de verificação é: ${code}\n\nEle expira em 15 minutos. Se não foi você, ignore este email.`,
+    html: `
+      <div style="font-family: sans-serif; max-width: 420px; margin: 0 auto;">
+        <p>Aqui está seu código de verificação do PIXO:</p>
+        <p style="font-size: 32px; font-weight: 900; letter-spacing: 8px; color: #158b20;">${code}</p>
+        <p>Ele expira em 15 minutos. Se não foi você, pode ignorar este email.</p>
+      </div>
+    `
+  });
 }
 
 async function callOpenAi(instructions: string, input: string): Promise<string> {
