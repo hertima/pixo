@@ -10,6 +10,7 @@ import {
   HelpCircle,
   LogOut,
   Moon,
+  Pencil,
   Radar,
   Shield,
   Sparkles,
@@ -50,7 +51,7 @@ export default function ProfileScreen() {
         <Text style={styles.title}>Conta PIXO</Text>
       </ScreenSection>
 
-      <View style={styles.header}>
+      <Pressable style={styles.header} onPress={() => router.push("/edit-profile")}>
         <MascotImage name="laptop" size="mascotSmall" />
         <View style={styles.headerText}>
           <Text style={styles.name}>{displayName}</Text>
@@ -62,9 +63,11 @@ export default function ProfileScreen() {
             </Text>
           </View>
         </View>
-      </View>
+        <Pencil color={colors.textMuted} size={18} />
+      </Pressable>
 
       <View style={styles.menu}>
+        <MenuItem icon={Pencil} label="Editar perfil" onPress={() => router.push("/edit-profile")} />
         <MenuItem icon={Sparkles} label="PIXO Evolução" onPress={() => router.push("/evolution")} />
         <MenuItem icon={Award} label="Conquistas" onPress={() => router.push("/achievements")} />
         <MenuItem icon={Radar} label="Radar de Oportunidades" onPress={() => router.push("/radar")} />

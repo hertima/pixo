@@ -82,6 +82,8 @@ type OpportunityRow = {
   company: string | null;
   city: string | null;
   pitch_message: string | null;
+  address: string | null;
+  phone: string | null;
   status: string;
   created_at: string;
 };
@@ -389,6 +391,62 @@ app.get("/api/progress/summary", requireAuth, async (request, response, next) =>
   }
 });
 
+app.patch("/api/profile", requireAuth, async (request, response, next) => {
+  try {
+    const userId = (request as AuthedRequest).userId;
+    const body = readBody(request);
+    const profile = await getProfile(userId);
+
+    const displayNameInput = typeof body.displayName === "string" ? body.displayName.trim() : undefined;
+    const cityInput = typeof body.city === "string" ? body.city.trim() : undefined;
+    const skillInput = typeof body.skill === "string" ? body.skill.trim() : undefined;
+    const monthlyGoal = typeof body.monthlyGoal === "number" && body.monthlyGoal > 0 ? body.monthlyGoal : undefined;
+    const preferredChannel = isChannel(body.preferredChannel) ? body.preferredChannel : undefined;
+
+    let latitude = profile?.latitude ?? null;
+    let longitude = profile?.longitude ?? null;
+
+    if (cityInput) {
+      const coords = await geocodeCity(cityInput);
+
+      if (coords) {
+        latitude = coords.lat;
+        longitude = coords.lon;
+      }
+    }
+
+    const nextDisplayName = displayNameInput || profile?.display_name || null;
+    const nextChannel = preferredChannel ?? profile?.preferred_channel ?? null;
+    const nextCity = cityInput || profile?.city || null;
+    const nextSkills = skillInput ? [skillInput] : profile?.skills ?? [];
+
+    await pool.query(
+      `INSERT INTO ai_profiles (user_id, display_name, preferred_channel, city, latitude, longitude, skills)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (user_id) DO UPDATE SET
+         display_name = $2, preferred_channel = $3, city = $4, latitude = $5, longitude = $6, skills = $7, updated_at = now()`,
+      [userId, nextDisplayName, nextChannel, nextCity, latitude, longitude, nextSkills]
+    );
+
+    if (monthlyGoal !== undefined) {
+      const activeGoal = await getActiveGoal(userId);
+
+      if (activeGoal) {
+        await pool.query("UPDATE goals SET target_amount = $2 WHERE id = $1", [activeGoal.id, monthlyGoal]);
+      } else {
+        await pool.query("INSERT INTO goals (user_id, name, target_amount) VALUES ($1, 'Meta mensal', $2)", [
+          userId,
+          monthlyGoal
+        ]);
+      }
+    }
+
+    response.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get("/api/opportunities", requireAuth, async (request, response, next) => {
   try {
     const userId = (request as AuthedRequest).userId;
@@ -591,7 +649,7 @@ function serializeSteps(steps: MissionStepRow[]): { id: string; label: string; d
 
 async function getOpportunities(userId: string): Promise<OpportunityRow[]> {
   const result = await pool.query<OpportunityRow>(
-    "SELECT id, title, company, city, pitch_message, status, created_at FROM opportunities WHERE user_id = $1 AND status = 'new' ORDER BY created_at DESC LIMIT 20",
+    "SELECT id, title, company, city, pitch_message, address, phone, status, created_at FROM opportunities WHERE user_id = $1 AND status = 'new' ORDER BY created_at DESC LIMIT 20",
     [userId]
   );
   return result.rows;
@@ -603,6 +661,8 @@ function serializeOpportunity(opportunity: OpportunityRow): {
   company: string | null;
   city: string | null;
   pitchMessage: string | null;
+  address: string | null;
+  phone: string | null;
   createdAt: string;
 } {
   return {
@@ -611,6 +671,8 @@ function serializeOpportunity(opportunity: OpportunityRow): {
     company: opportunity.company,
     city: opportunity.city,
     pitchMessage: opportunity.pitch_message,
+    address: opportunity.address,
+    phone: opportunity.phone,
     createdAt: opportunity.created_at
   };
 }
@@ -704,13 +766,15 @@ async function generateOpportunities(userId: string, cityInput?: string, skillIn
   } else {
     for (const item of results) {
       await pool.query(
-        "INSERT INTO opportunities (user_id, title, company, city, pitch_message, status) VALUES ($1, $2, $3, $4, $5, 'new')",
+        "INSERT INTO opportunities (user_id, title, company, city, pitch_message, address, phone, status) VALUES ($1, $2, $3, $4, $5, $6, $7, 'new')",
         [
           userId,
           item.name,
           item.categoryLabel,
           formatDistance(item.distanceMeters),
-          plan.template.replace(/\{negocio\}/gi, item.name)
+          plan.template.replace(/\{negocio\}/gi, item.name),
+          item.address,
+          item.phone
         ]
       );
     }
@@ -800,7 +864,28 @@ function buildCategoryQuery(lat: number, lon: number, key: OpportunityCategoryKe
   return `[out:json][timeout:10];(${blocks});out center 12;`;
 }
 
-type OverpassResult = { name: string; categoryLabel: string; distanceMeters: number };
+type OverpassResult = {
+  name: string;
+  categoryLabel: string;
+  distanceMeters: number;
+  address: string | null;
+  phone: string | null;
+};
+
+function extractAddress(tags: Record<string, string>): string | null {
+  const street = tags["addr:street"];
+
+  if (!street) {
+    return null;
+  }
+
+  const houseNumber = tags["addr:housenumber"];
+  return houseNumber ? `${street}, ${houseNumber}` : street;
+}
+
+function extractPhone(tags: Record<string, string>): string | null {
+  return tags.phone ?? tags["contact:phone"] ?? null;
+}
 
 async function queryOverpassForCategory(lat: number, lon: number, key: OpportunityCategoryKey): Promise<OverpassResult[]> {
   const query = buildCategoryQuery(lat, lon, key);
@@ -850,7 +935,13 @@ async function queryOverpassForCategory(lat: number, lon: number, key: Opportuni
           return null;
         }
 
-        return { name, categoryLabel, distanceMeters: haversineMeters(lat, lon, elementLat, elementLon) };
+        return {
+          name,
+          categoryLabel,
+          distanceMeters: haversineMeters(lat, lon, elementLat, elementLon),
+          address: extractAddress(record.tags ?? {}),
+          phone: extractPhone(record.tags ?? {})
+        };
       })
       .filter((item): item is OverpassResult => item !== null);
   } catch {

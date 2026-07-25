@@ -134,6 +134,8 @@ export type Opportunity = {
   company: string | null;
   city: string | null;
   pitchMessage: string | null;
+  address: string | null;
+  phone: string | null;
   createdAt: string;
 };
 
@@ -142,7 +144,7 @@ export type OpportunitiesResponse = {
 };
 
 type ApiRequestOptions = {
-  method?: "GET" | "POST" | "PUT" | "DELETE";
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
   token?: string;
 };

@@ -100,11 +100,15 @@ CREATE TABLE IF NOT EXISTS opportunities (
   company TEXT,
   city TEXT,
   pitch_message TEXT,
+  address TEXT,
+  phone TEXT,
   status TEXT NOT NULL DEFAULT 'new',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS pitch_message TEXT;
+ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS address TEXT;
+ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS phone TEXT;
 
 CREATE TABLE IF NOT EXISTS mentor_messages (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

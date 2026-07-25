@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import * as Clipboard from "expo-clipboard";
-import { Copy, MapPin, Radar as RadarIcon } from "lucide-react-native";
+import { Copy, MapPin, Phone, Radar as RadarIcon } from "lucide-react-native";
 
 import { AppScreen, ScreenSection } from "../../components/AppScreen";
 import { BackHeader } from "../../components/BackHeader";
@@ -78,6 +78,13 @@ export default function RadarScreen() {
               {opportunity.company ? <Text style={styles.company}>{opportunity.company}</Text> : null}
               <Text style={styles.title}>{opportunity.title}</Text>
               {opportunity.city ? <Text style={styles.city}>{opportunity.city}</Text> : null}
+              {opportunity.address ? <Text style={styles.city}>{opportunity.address}</Text> : null}
+              {opportunity.phone ? (
+                <View style={styles.phoneRow}>
+                  <Phone color={colors.textMuted} size={12} />
+                  <Text style={styles.city}>{opportunity.phone}</Text>
+                </View>
+              ) : null}
               {opportunity.pitchMessage ? (
                 <Pressable
                   style={styles.copyButton}
@@ -165,6 +172,11 @@ const styles = StyleSheet.create({
   city: {
     color: colors.textMuted,
     fontSize: typography.caption
+  },
+  phoneRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xxs
   },
   copyButton: {
     flexDirection: "row",

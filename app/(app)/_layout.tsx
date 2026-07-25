@@ -80,6 +80,7 @@ export default function AppLayout() {
       <Tabs.Screen name="achievements" options={{ href: null }} />
       <Tabs.Screen name="radar" options={{ href: null }} />
       <Tabs.Screen name="simulator" options={{ href: null }} />
+      <Tabs.Screen name="edit-profile" options={{ href: null }} />
     </Tabs>
   );
 }
