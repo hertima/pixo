@@ -12,6 +12,9 @@ export type OnboardingDraft = {
   monthlyGoal: number;
   channel: MissionChannel;
   createdAt: string;
+  displayName?: string;
+  city?: string;
+  skill?: string;
 };
 
 export type PaywallDecision = "free" | "premium";

@@ -99,6 +99,9 @@ type OnboardingDraft = {
   monthlyGoal: number;
   channel: "whatsapp" | "instagram" | "email";
   createdAt: string;
+  displayName?: string;
+  city?: string;
+  skill?: string;
 };
 
 type AuthedRequest = Request & {
@@ -1015,15 +1018,39 @@ async function getMentorMessages(userId: string): Promise<MentorMessageRow[]> {
 
 async function migrateDraft(userId: string, draft: OnboardingDraft): Promise<void> {
   const mission = buildInitialMission(draft);
+  let latitude: number | null = null;
+  let longitude: number | null = null;
+
+  if (draft.city) {
+    const coords = await geocodeCity(draft.city);
+
+    if (coords) {
+      latitude = coords.lat;
+      longitude = coords.lon;
+    }
+  }
 
   await pool.query(
-    `INSERT INTO ai_profiles (user_id, preferred_channel, memory)
-     VALUES ($1, $2, $3::JSONB)
+    `INSERT INTO ai_profiles (user_id, preferred_channel, display_name, city, latitude, longitude, skills, memory)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8::JSONB)
      ON CONFLICT (user_id)
-     DO UPDATE SET preferred_channel = EXCLUDED.preferred_channel, memory = ai_profiles.memory || EXCLUDED.memory, updated_at = now()`,
+     DO UPDATE SET
+       preferred_channel = EXCLUDED.preferred_channel,
+       display_name = COALESCE(EXCLUDED.display_name, ai_profiles.display_name),
+       city = COALESCE(EXCLUDED.city, ai_profiles.city),
+       latitude = COALESCE(EXCLUDED.latitude, ai_profiles.latitude),
+       longitude = COALESCE(EXCLUDED.longitude, ai_profiles.longitude),
+       skills = CASE WHEN array_length(EXCLUDED.skills, 1) > 0 THEN EXCLUDED.skills ELSE ai_profiles.skills END,
+       memory = ai_profiles.memory || EXCLUDED.memory,
+       updated_at = now()`,
     [
       userId,
       draft.channel,
+      draft.displayName ?? null,
+      draft.city ?? null,
+      latitude,
+      longitude,
+      draft.skill ? [draft.skill] : [],
       JSON.stringify({
         monthlyGoal: draft.monthlyGoal,
         onboardingCreatedAt: draft.createdAt
