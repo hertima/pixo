@@ -1,27 +1,58 @@
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
-import { Radar as RadarIcon } from "lucide-react-native";
+import { useState } from "react";
+import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import * as Clipboard from "expo-clipboard";
+import { Copy, MapPin, Radar as RadarIcon } from "lucide-react-native";
 
 import { AppScreen, ScreenSection } from "../../components/AppScreen";
 import { BackHeader } from "../../components/BackHeader";
 import { EmptyState } from "../../components/EmptyState";
 import { MascotImage } from "../../components/MascotImage";
 import { PrimaryButton } from "../../components/PrimaryButton";
+import { useBootstrap } from "../../hooks/useBootstrap";
 import { useOpportunities } from "../../hooks/useOpportunities";
 import { colors, radii, shadows, spacing, typography } from "../../theme/tokens";
 
 export default function RadarScreen() {
+  const { data: bootstrap } = useBootstrap();
   const { data, error, loading, refreshing, refresh } = useOpportunities();
+  const [city, setCity] = useState(bootstrap?.profile?.city ?? "");
+  const [skill, setSkill] = useState(bootstrap?.profile?.skills[0] ?? "");
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const opportunities = data ?? [];
+
+  async function copyPitch(id: string, message: string) {
+    await Clipboard.setStringAsync(message);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId((current) => (current === id ? null : current)), 2000);
+  }
 
   return (
     <AppScreen>
       <ScreenSection>
         <BackHeader title="Radar de Oportunidades" />
         <Text style={styles.subtitle}>
-          Categorias de negócio que costumam precisar do seu serviço. São exemplos gerados pela IA a partir do seu
-          perfil, não uma lista de empresas verificadas.
+          Negócios reais perto de você que costumam precisar do seu serviço, com base no mapa e no seu perfil.
         </Text>
       </ScreenSection>
+
+      <View style={styles.locationRow}>
+        <MapPin color={colors.textMuted} size={18} />
+        <TextInput
+          value={city}
+          onChangeText={setCity}
+          placeholder="Sua cidade (ex: Curitiba, PR)"
+          placeholderTextColor={colors.textMuted}
+          style={styles.locationInput}
+        />
+      </View>
+
+      <TextInput
+        value={skill}
+        onChangeText={setSkill}
+        placeholder="O que você sabe fazer? (ex: churrasqueiro, limpar piscina, social media)"
+        placeholderTextColor={colors.textMuted}
+        style={styles.skillInput}
+      />
 
       {loading ? (
         <View style={styles.center}>
@@ -31,12 +62,12 @@ export default function RadarScreen() {
         <>
           <MascotImage name="radar" size="mascotLarge" />
           {error ? (
-            <EmptyState icon={RadarIcon} title="Não foi possível gerar" body={error} />
+            <EmptyState icon={RadarIcon} title="Não foi possível buscar" body={error} />
           ) : (
             <EmptyState
               icon={RadarIcon}
               title="Nenhuma oportunidade ainda"
-              body="Toque no botão abaixo para o PIXO IA sugerir categorias de negócio pro seu perfil."
+              body="Informe sua cidade acima e toque no botão pra o PIXO buscar negócios reais perto de você."
             />
           )}
         </>
@@ -47,6 +78,17 @@ export default function RadarScreen() {
               {opportunity.company ? <Text style={styles.company}>{opportunity.company}</Text> : null}
               <Text style={styles.title}>{opportunity.title}</Text>
               {opportunity.city ? <Text style={styles.city}>{opportunity.city}</Text> : null}
+              {opportunity.pitchMessage ? (
+                <Pressable
+                  style={styles.copyButton}
+                  onPress={() => copyPitch(opportunity.id, opportunity.pitchMessage as string)}
+                >
+                  <Copy color={colors.primary} size={14} />
+                  <Text style={styles.copyLabel}>
+                    {copiedId === opportunity.id ? "Mensagem copiada" : "Copiar mensagem"}
+                  </Text>
+                </Pressable>
+              ) : null}
             </View>
           ))}
         </View>
@@ -54,8 +96,9 @@ export default function RadarScreen() {
 
       <PrimaryButton
         title={opportunities.length === 0 ? "BUSCAR OPORTUNIDADES" : "ATUALIZAR OPORTUNIDADES"}
-        onPress={refresh}
+        onPress={() => refresh(city, skill)}
         loading={refreshing}
+        disabled={city.trim().length === 0}
       />
     </AppScreen>
   );
@@ -70,6 +113,32 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: typography.small,
     lineHeight: spacing.lg
+  },
+  locationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    borderRadius: radii.md,
+    backgroundColor: colors.input,
+    paddingHorizontal: spacing.md
+  },
+  locationInput: {
+    flex: 1,
+    color: colors.text,
+    fontSize: typography.body,
+    paddingVertical: spacing.sm
+  },
+  skillInput: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    borderRadius: radii.md,
+    backgroundColor: colors.input,
+    color: colors.text,
+    fontSize: typography.small,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm
   },
   list: {
     gap: spacing.sm
@@ -96,5 +165,22 @@ const styles = StyleSheet.create({
   city: {
     color: colors.textMuted,
     fontSize: typography.caption
+  },
+  copyButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: spacing.xxs,
+    marginTop: spacing.xs,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.borderStrong,
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xxs
+  },
+  copyLabel: {
+    color: colors.primary,
+    fontSize: typography.caption,
+    fontWeight: "800"
   }
 });

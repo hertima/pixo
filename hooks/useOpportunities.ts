@@ -8,7 +8,7 @@ export type OpportunitiesState = {
   loading: boolean;
   refreshing: boolean;
   reload: () => Promise<void>;
-  refresh: () => Promise<void>;
+  refresh: (city?: string, skill?: string) => Promise<void>;
 };
 
 export function useOpportunities(): OpportunitiesState {
@@ -32,12 +32,25 @@ export function useOpportunities(): OpportunitiesState {
     }
   }, []);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (city?: string, skill?: string) => {
     setRefreshing(true);
     setError(null);
 
     try {
-      const response = await apiRequest<OpportunitiesResponse>("/api/opportunities/refresh", { method: "POST" });
+      const body: Record<string, string> = {};
+
+      if (city) {
+        body.city = city;
+      }
+
+      if (skill) {
+        body.skill = skill;
+      }
+
+      const response = await apiRequest<OpportunitiesResponse>("/api/opportunities/refresh", {
+        method: "POST",
+        body: Object.keys(body).length > 0 ? body : undefined
+      });
       setData(response.opportunities);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Não foi possível gerar oportunidades.");

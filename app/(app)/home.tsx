@@ -49,7 +49,7 @@ export default function HomeScreen() {
           <View style={[styles.card, styles.cardAccentGold]}>
             <View style={styles.cardHeaderRow}>
               <Text style={styles.cardLabel}>Você faturou hoje</Text>
-              <MascotImage name="cash" size="mascotTiny" />
+              <MascotImage name="cash" size="mascotSmall" />
             </View>
             <Text style={styles.valueGold}>R$ {earnedToday.toLocaleString("pt-BR")}</Text>
           </View>
@@ -73,7 +73,7 @@ export default function HomeScreen() {
             <View style={[styles.card, styles.cardAccentDanger]}>
               <View style={styles.cardHeaderRow}>
                 <Text style={styles.cardLabel}>Dinheiro perdido hoje</Text>
-                <MascotImage name="tired" size="mascotTiny" />
+                <MascotImage name="tired" size="mascotSmall" />
               </View>
               <Text style={styles.valueDanger}>≈ R$ {lostToday.toLocaleString("pt-BR")}</Text>
               <Text style={styles.hint}>Estimativa baseada nas suas metas e atividades.</Text>

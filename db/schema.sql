@@ -19,10 +19,14 @@ CREATE TABLE IF NOT EXISTS ai_profiles (
   skills TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
   memory JSONB NOT NULL DEFAULT '{}'::JSONB,
   xp INTEGER NOT NULL DEFAULT 0,
+  latitude DOUBLE PRECISION,
+  longitude DOUBLE PRECISION,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 ALTER TABLE ai_profiles ADD COLUMN IF NOT EXISTS xp INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE ai_profiles ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION;
+ALTER TABLE ai_profiles ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION;
 
 CREATE TABLE IF NOT EXISTS goals (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -95,9 +99,12 @@ CREATE TABLE IF NOT EXISTS opportunities (
   title TEXT NOT NULL,
   company TEXT,
   city TEXT,
+  pitch_message TEXT,
   status TEXT NOT NULL DEFAULT 'new',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS pitch_message TEXT;
 
 CREATE TABLE IF NOT EXISTS mentor_messages (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

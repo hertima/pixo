@@ -18,6 +18,7 @@ export type ApiProfile = {
   displayName: string | null;
   preferredChannel: string | null;
   freeTimeMinutes: number | null;
+  city: string | null;
   cityAuthorized: boolean;
   skills: string[];
 };
@@ -132,6 +133,7 @@ export type Opportunity = {
   title: string;
   company: string | null;
   city: string | null;
+  pitchMessage: string | null;
   createdAt: string;
 };
 

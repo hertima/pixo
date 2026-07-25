@@ -36,6 +36,8 @@ type ProfileRow = {
   city_authorized: boolean;
   skills: string[];
   xp: number;
+  latitude: number | null;
+  longitude: number | null;
 };
 
 type GoalRow = {
@@ -79,6 +81,7 @@ type OpportunityRow = {
   title: string;
   company: string | null;
   city: string | null;
+  pitch_message: string | null;
   status: string;
   created_at: string;
 };
@@ -217,6 +220,7 @@ app.get("/api/bootstrap", requireAuth, async (request, response, next) => {
             displayName: profile.display_name,
             preferredChannel: profile.preferred_channel,
             freeTimeMinutes: profile.free_time_minutes,
+            city: profile.city,
             cityAuthorized: profile.city_authorized,
             skills: profile.skills
           }
@@ -398,7 +402,10 @@ app.get("/api/opportunities", requireAuth, async (request, response, next) => {
 app.post("/api/opportunities/refresh", requireAuth, async (request, response, next) => {
   try {
     const userId = (request as AuthedRequest).userId;
-    const opportunities = await generateOpportunities(userId);
+    const body = request.body && typeof request.body === "object" ? (request.body as Record<string, unknown>) : {};
+    const cityInput = typeof body.city === "string" ? body.city : undefined;
+    const skillInput = typeof body.skill === "string" ? body.skill : undefined;
+    const opportunities = await generateOpportunities(userId, cityInput, skillInput);
     response.json({ opportunities: opportunities.map(serializeOpportunity) });
   } catch (error) {
     next(error);
@@ -482,7 +489,7 @@ async function getUser(userId: string): Promise<UserRow> {
 
 async function getProfile(userId: string): Promise<ProfileRow | null> {
   const result = await pool.query<ProfileRow>(
-    "SELECT display_name, preferred_channel, free_time_minutes, city, city_authorized, skills, xp FROM ai_profiles WHERE user_id = $1",
+    "SELECT display_name, preferred_channel, free_time_minutes, city, city_authorized, skills, xp, latitude, longitude FROM ai_profiles WHERE user_id = $1",
     [userId]
   );
   return result.rows[0] ?? null;
@@ -584,7 +591,7 @@ function serializeSteps(steps: MissionStepRow[]): { id: string; label: string; d
 
 async function getOpportunities(userId: string): Promise<OpportunityRow[]> {
   const result = await pool.query<OpportunityRow>(
-    "SELECT id, title, company, city, status, created_at FROM opportunities WHERE user_id = $1 AND status = 'new' ORDER BY created_at DESC LIMIT 20",
+    "SELECT id, title, company, city, pitch_message, status, created_at FROM opportunities WHERE user_id = $1 AND status = 'new' ORDER BY created_at DESC LIMIT 20",
     [userId]
   );
   return result.rows;
@@ -595,6 +602,7 @@ function serializeOpportunity(opportunity: OpportunityRow): {
   title: string;
   company: string | null;
   city: string | null;
+  pitchMessage: string | null;
   createdAt: string;
 } {
   return {
@@ -602,60 +610,296 @@ function serializeOpportunity(opportunity: OpportunityRow): {
     title: opportunity.title,
     company: opportunity.company,
     city: opportunity.city,
+    pitchMessage: opportunity.pitch_message,
     createdAt: opportunity.created_at
   };
 }
 
-async function generateOpportunities(userId: string): Promise<OpportunityRow[]> {
-  const profile = await getProfile(userId);
-  const skills = profile?.skills.length ? profile.skills.join(", ") : "serviços gerais para pequenos negócios";
-  const instructions = [
-    "Você é o motor do Radar de Oportunidades do PIXO, um app de renda extra.",
-    "Gere CATEGORIAS de negócio que costumam precisar do tipo de serviço do usuário — nunca invente nomes de empresas reais, endereços ou dados verificáveis.",
-    "Responda estritamente em JSON, sem markdown: um array com exatamente 6 objetos no formato {\"category\": string, \"pitch\": string}.",
-    "\"category\" é um tipo de negócio (ex: Pet shops, Salões de beleza). \"pitch\" é uma frase curta explicando a demanda (ex: Pet shops da região costumam precisar de conteúdo para redes sociais)."
-  ].join("\n");
+type OpportunityCategoryKey =
+  | "pet"
+  | "beauty"
+  | "food"
+  | "fitness"
+  | "office"
+  | "clinic"
+  | "retail"
+  | "realestate"
+  | "auto"
+  | "bakery"
+  | "hotel"
+  | "school";
 
-  const raw = await callOpenAi(instructions, `Habilidades/serviço do usuário: ${skills}.`);
-  const items = parseOpportunityItems(raw);
+const OPPORTUNITY_CATEGORIES: Record<OpportunityCategoryKey, { label: string; filters: string[] }> = {
+  pet: { label: "Pet shops", filters: ["shop=pet"] },
+  beauty: { label: "Salões de beleza e barbearias", filters: ["shop=hairdresser", "shop=beauty"] },
+  food: { label: "Restaurantes e cafés", filters: ["amenity=restaurant", "amenity=cafe", "amenity=fast_food"] },
+  fitness: { label: "Academias", filters: ["leisure=fitness_centre"] },
+  office: { label: "Escritórios de contabilidade e advocacia", filters: ["office=accountant", "office=lawyer"] },
+  clinic: { label: "Clínicas e consultórios", filters: ["amenity=clinic", "amenity=doctors", "amenity=dentist"] },
+  retail: { label: "Lojas de varejo", filters: ["shop=clothes", "shop=convenience", "shop=supermarket"] },
+  realestate: { label: "Imobiliárias", filters: ["office=estate_agent"] },
+  auto: { label: "Oficinas e autopeças", filters: ["shop=car_repair"] },
+  bakery: { label: "Padarias e confeitarias", filters: ["shop=bakery"] },
+  hotel: { label: "Pousadas e hotéis", filters: ["tourism=hotel", "tourism=guest_house"] },
+  school: { label: "Escolas e cursos", filters: ["amenity=school", "amenity=driving_school"] }
+};
+
+const DEFAULT_OPPORTUNITY_CATEGORIES: OpportunityCategoryKey[] = ["food", "beauty", "retail", "office"];
+
+async function generateOpportunities(userId: string, cityInput?: string, skillInput?: string): Promise<OpportunityRow[]> {
+  const profile = await getProfile(userId);
+  let latitude = profile?.latitude ?? null;
+  let longitude = profile?.longitude ?? null;
+
+  if (cityInput && cityInput.trim().length > 0) {
+    const coords = await geocodeCity(cityInput.trim());
+
+    if (!coords) {
+      throw new HttpError(400, "Não encontrei essa cidade. Tente escrever de outra forma (ex: Curitiba, PR).");
+    }
+
+    latitude = coords.lat;
+    longitude = coords.lon;
+
+    await pool.query(
+      `INSERT INTO ai_profiles (user_id, city, latitude, longitude) VALUES ($1, $2, $3, $4)
+       ON CONFLICT (user_id) DO UPDATE SET city = EXCLUDED.city, latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude, updated_at = now()`,
+      [userId, cityInput.trim(), latitude, longitude]
+    );
+  }
+
+  if (skillInput && skillInput.trim().length > 0) {
+    await pool.query(
+      `INSERT INTO ai_profiles (user_id, skills) VALUES ($1, $2)
+       ON CONFLICT (user_id) DO UPDATE SET skills = EXCLUDED.skills, updated_at = now()`,
+      [userId, [skillInput.trim()]]
+    );
+  }
+
+  if (latitude === null || longitude === null) {
+    throw new HttpError(400, "Informe sua cidade para o PIXO buscar oportunidades reais perto de você.");
+  }
+
+  const skills =
+    skillInput?.trim() || (profile?.skills.length ? profile.skills.join(", ") : "serviços gerais para pequenos negócios");
+  const plan = await planOutreach(skills, profile?.preferred_channel ?? null);
+  const results = await queryOverpass(latitude, longitude, plan.categories);
 
   await pool.query("DELETE FROM opportunities WHERE user_id = $1 AND status = 'new'", [userId]);
 
-  for (const item of items) {
-    await pool.query(
-      "INSERT INTO opportunities (user_id, title, company, city, status) VALUES ($1, $2, $3, $4, 'new')",
-      [userId, item.pitch, item.category, profile?.city ?? "Sua região"]
-    );
+  if (results.length === 0) {
+    for (const key of plan.categories) {
+      const category = OPPORTUNITY_CATEGORIES[key];
+      await pool.query(
+        "INSERT INTO opportunities (user_id, title, company, city, pitch_message, status) VALUES ($1, $2, $3, $4, $5, 'new')",
+        [
+          userId,
+          `${category.label} costumam precisar desse tipo de serviço.`,
+          category.label,
+          "Poucos dados de mapa pra sua região ainda",
+          plan.template.replace(/\{negocio\}/gi, category.label)
+        ]
+      );
+    }
+  } else {
+    for (const item of results) {
+      await pool.query(
+        "INSERT INTO opportunities (user_id, title, company, city, pitch_message, status) VALUES ($1, $2, $3, $4, $5, 'new')",
+        [
+          userId,
+          item.name,
+          item.categoryLabel,
+          formatDistance(item.distanceMeters),
+          plan.template.replace(/\{negocio\}/gi, item.name)
+        ]
+      );
+    }
   }
 
   return getOpportunities(userId);
 }
 
-function parseOpportunityItems(raw: string): { category: string; pitch: string }[] {
-  const cleaned = raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+async function geocodeCity(city: string): Promise<{ lat: number; lon: number } | null> {
+  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(city)}`;
+  const response = await fetch(url, { headers: { "User-Agent": "PixoApp/1.0 (contato@pixo.app)" } });
 
-  let parsed: unknown;
+  if (!response.ok) {
+    return null;
+  }
+
+  const payload: unknown = await response.json();
+
+  if (!Array.isArray(payload) || payload.length === 0) {
+    return null;
+  }
+
+  const first = payload[0] as { lat?: unknown; lon?: unknown };
+  const lat = typeof first.lat === "string" ? Number(first.lat) : NaN;
+  const lon = typeof first.lon === "string" ? Number(first.lon) : NaN;
+
+  if (Number.isNaN(lat) || Number.isNaN(lon)) {
+    return null;
+  }
+
+  return { lat, lon };
+}
+
+type OutreachPlan = {
+  categories: OpportunityCategoryKey[];
+  template: string;
+};
+
+function defaultOutreachTemplate(skills: string): string {
+  return `Oi! Vi o {negocio} por aqui e acho que consigo ajudar vocês com ${skills}. Posso te mostrar uma ideia rápida, sem compromisso?`;
+}
+
+async function planOutreach(skills: string, preferredChannel: string | null): Promise<OutreachPlan> {
+  const keys = Object.keys(OPPORTUNITY_CATEGORIES) as OpportunityCategoryKey[];
+  const channelLabel = preferredChannel ?? "WhatsApp";
+  const instructions = [
+    "Você é o motor do Radar de Oportunidades do PIXO, um app de renda extra.",
+    "Tarefa 1: escolher quais tipos de negócio local costumam precisar do serviço que o usuário oferece.",
+    `Escolha entre 3 e 5 categorias desta lista fixa: ${keys.join(", ")}.`,
+    `Tarefa 2: escrever UMA mensagem curta de primeiro contato (estilo ${channelLabel}, informal e direta, sem soar spam), que o usuário possa copiar e colar pra abordar qualquer um desses negócios.`,
+    "A mensagem PRECISA conter o texto literal {negocio} no lugar do nome do negócio, pra ser substituído depois.",
+    'Responda estritamente em JSON, sem markdown, no formato exato: {"categories": ["chave1","chave2"], "template": "mensagem com {negocio}"}. Use somente chaves da lista em categories.'
+  ].join("\n");
 
   try {
-    parsed = JSON.parse(cleaned);
+    const raw = await callOpenAi(instructions, `Habilidades/serviço do usuário: ${skills}.`);
+    const cleaned = raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+    const parsed: unknown = JSON.parse(cleaned);
+
+    if (parsed && typeof parsed === "object") {
+      const record = parsed as { categories?: unknown; template?: unknown };
+      const categories = Array.isArray(record.categories)
+        ? record.categories.filter((item): item is OpportunityCategoryKey => keys.includes(item as OpportunityCategoryKey))
+        : [];
+      const template = typeof record.template === "string" && record.template.includes("{negocio}") ? record.template : null;
+
+      if (categories.length > 0 && template) {
+        return { categories: categories.slice(0, 5), template };
+      }
+    }
   } catch {
-    throw new HttpError(502, "Não foi possível gerar oportunidades agora.");
+    // Falls through to the default plan below.
   }
 
-  if (!Array.isArray(parsed)) {
-    throw new HttpError(502, "Não foi possível gerar oportunidades agora.");
-  }
+  return { categories: DEFAULT_OPPORTUNITY_CATEGORIES, template: defaultOutreachTemplate(skills) };
+}
 
-  return parsed
-    .filter((item): item is { category: string; pitch: string } => {
-      return (
-        Boolean(item) &&
-        typeof item === "object" &&
-        typeof (item as { category?: unknown }).category === "string" &&
-        typeof (item as { pitch?: unknown }).pitch === "string"
-      );
+function buildOverpassQuery(lat: number, lon: number, categories: OpportunityCategoryKey[]): string {
+  const radiusMeters = 6000;
+  const blocks = categories
+    .flatMap((key) => OPPORTUNITY_CATEGORIES[key].filters)
+    .map((filter) => {
+      const [tagKey, tagValue] = filter.split("=");
+      return `nwr["${tagKey}"="${tagValue}"](around:${radiusMeters},${lat},${lon});`;
     })
-    .slice(0, 8);
+    .join("");
+
+  return `[out:json][timeout:20];(${blocks});out center 40;`;
+}
+
+function categorizeElement(tags: Record<string, string>, categories: OpportunityCategoryKey[]): string {
+  for (const key of categories) {
+    for (const filter of OPPORTUNITY_CATEGORIES[key].filters) {
+      const tagKey = filter.split("=")[0] ?? "";
+      const tagValue = filter.split("=")[1] ?? "";
+
+      if (tagKey && tags[tagKey] === tagValue) {
+        return OPPORTUNITY_CATEGORIES[key].label;
+      }
+    }
+  }
+
+  return "Negócio local";
+}
+
+async function queryOverpass(
+  lat: number,
+  lon: number,
+  categories: OpportunityCategoryKey[]
+): Promise<{ name: string; categoryLabel: string; distanceMeters: number }[]> {
+  const query = buildOverpassQuery(lat, lon, categories);
+  const response = await fetch("https://overpass-api.de/api/interpreter", {
+    method: "POST",
+    headers: {
+      "User-Agent": "PixoApp/1.0 (contato@pixo.app)",
+      "Content-Type": "application/x-www-form-urlencoded"
+    },
+    body: `data=${encodeURIComponent(query)}`
+  });
+
+  if (!response.ok) {
+    return [];
+  }
+
+  const payload: unknown = await response.json();
+
+  if (!payload || typeof payload !== "object" || !("elements" in payload) || !Array.isArray(payload.elements)) {
+    return [];
+  }
+
+  const results = payload.elements
+    .map((element) => {
+      if (!element || typeof element !== "object") {
+        return null;
+      }
+
+      const record = element as {
+        tags?: Record<string, string>;
+        lat?: number;
+        lon?: number;
+        center?: { lat: number; lon: number };
+      };
+      const name = record.tags?.name;
+      const elementLat = record.lat ?? record.center?.lat;
+      const elementLon = record.lon ?? record.center?.lon;
+
+      if (!name || elementLat === undefined || elementLon === undefined) {
+        return null;
+      }
+
+      return {
+        name,
+        categoryLabel: categorizeElement(record.tags ?? {}, categories),
+        distanceMeters: haversineMeters(lat, lon, elementLat, elementLon)
+      };
+    })
+    .filter((item): item is { name: string; categoryLabel: string; distanceMeters: number } => item !== null)
+    .sort((a, b) => a.distanceMeters - b.distanceMeters);
+
+  const seen = new Set<string>();
+  const deduped: typeof results = [];
+
+  for (const item of results) {
+    if (!seen.has(item.name)) {
+      seen.add(item.name);
+      deduped.push(item);
+    }
+  }
+
+  return deduped.slice(0, 15);
+}
+
+function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const earthRadiusMeters = 6371000;
+  const toRad = (deg: number): number => (deg * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+
+  return earthRadiusMeters * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function formatDistance(meters: number): string {
+  if (meters < 1000) {
+    return `${Math.round(meters)} m de você`;
+  }
+
+  return `${(meters / 1000).toFixed(1)} km de você`;
 }
 
 function serializeProgressEvent(event: ProgressEventRow): {
