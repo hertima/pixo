@@ -13,7 +13,7 @@ export default function RootLayout() {
     const style = document.createElement("style");
     style.textContent = `
       html, body, #root {
-        height: 100dvh !important;
+        height: 100svh !important;
         overscroll-behavior: none;
       }
       body {

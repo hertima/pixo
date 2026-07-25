@@ -19,6 +19,9 @@ export default function AppLayout() {
   const { loading, session } = useSession();
   const insets = useSafeAreaInsets();
   const bottomInset = Math.max(insets.bottom, 8);
+  const tabBarItemHeight = 48;
+  const tabBarPaddingTop = 8;
+  const tabBarHeight = tabBarPaddingTop + tabBarItemHeight + bottomInset;
 
   if (!loading && !session) {
     return <Redirect href="/auth" />;
@@ -35,13 +38,14 @@ export default function AppLayout() {
         tabBarStyle: {
           backgroundColor: colors.surface,
           borderTopColor: colors.border,
-          paddingTop: 8,
+          height: tabBarHeight,
+          paddingTop: tabBarPaddingTop,
           paddingBottom: bottomInset,
           flexShrink: 0
         },
         tabBarItemStyle: {
           paddingVertical: 2,
-          minHeight: 48
+          minHeight: tabBarItemHeight
         },
         tabBarLabelStyle: {
           fontSize: typography.caption,
